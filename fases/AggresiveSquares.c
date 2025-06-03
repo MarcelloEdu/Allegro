@@ -1,23 +1,27 @@
-//Compilação: gcc AggresiveSquares.c -o AS $(pkg-config allegro-5 allegro_main-5 allegro_font-5 --libs --cflags)
-
 #include <allegro5/allegro5.h>
 #include <allegro5/allegro_font.h>
-#include <allegro5/allegro_image.h>
 #include <allegro5/allegro_ttf.h>
+#include <allegro5/allegro_image.h>
+#include <stdio.h>
 
-int main(){
+int main() {
     al_init();
     al_install_keyboard();
     al_init_image_addon();
     al_init_font_addon();
-	// al_init_ttf_addon();
+    al_init_ttf_addon();  // Importante para TTF
 
     ALLEGRO_TIMER* timer = al_create_timer(1.0 / 30.0);
     ALLEGRO_EVENT_QUEUE* queue = al_create_event_queue();
-    ALLEGRO_FONT* font = al_create_builtin_font();  // Fonte padrão (bitmap)
-    ALLEGRO_DISPLAY* disp = al_create_display(800, 600);  // Tela mais leve para testes
+    ALLEGRO_DISPLAY* disp = al_create_display(800, 600);
     ALLEGRO_BITMAP* fundo = al_load_bitmap("orig_big.png");
 
+    // ⬇️ Carregando sua fonte font.ttf com tamanho 40
+    ALLEGRO_FONT* font = al_load_ttf_font("font.ttf", 40, 0);
+    if (!font) {
+        printf("Erro ao carregar font.ttf\n");
+        return 1;
+    }
 
     al_register_event_source(queue, al_get_keyboard_event_source());
     al_register_event_source(queue, al_get_display_event_source(disp));
@@ -30,13 +34,12 @@ int main(){
         al_wait_for_event(queue, &event);
 
         if (event.type == ALLEGRO_EVENT_TIMER) {
-            // Desenha o fundo
             al_draw_bitmap(fundo, 0, 0, 0);
 
-            // Desenha o menu (centralizado)
+            // ⬇️ Texto com a nova fonte, centralizado
             al_draw_text(font, al_map_rgb(0, 0, 0), 400, 200, ALLEGRO_ALIGN_CENTER, "JOGAR");
-            al_draw_text(font, al_map_rgb(0, 0, 0), 400, 250, ALLEGRO_ALIGN_CENTER, "CONFIGURAÇÕES");
-            al_draw_text(font, al_map_rgb(0, 0, 0), 400, 300, ALLEGRO_ALIGN_CENTER, "INSTRUÇÕES");
+            al_draw_text(font, al_map_rgb(0, 0, 0), 400, 260, ALLEGRO_ALIGN_CENTER, "CONFIGURAÇÕES");
+            al_draw_text(font, al_map_rgb(0, 0, 0), 400, 320, ALLEGRO_ALIGN_CENTER, "INSTRUÇÕES");
 
             al_flip_display();
         } else if (event.type == ALLEGRO_EVENT_DISPLAY_CLOSE) {
