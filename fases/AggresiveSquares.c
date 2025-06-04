@@ -64,8 +64,8 @@ void update_tiros(Tiro tiros[], int max) {
 void gerar_inimigo(Inimigo inimigos[], int max) {
     for (int i = 0; i < max; i++) {
         if (!inimigos[i].ativo) {
-            inimigos[i].x = rand() % LARGURA;
-            inimigos[i].y = rand() % ALTURA;
+            inimigos[i].x = rand() % LARGURA - 100;
+            inimigos[i].y = rand() % ALTURA - 100;
             inimigos[i].dx = ((rand() % 5) - 2);
             inimigos[i].dy = ((rand() % 5) - 2);
             inimigos[i].r = 0;
@@ -83,11 +83,26 @@ void update_inimigos(Inimigo inimigos[], Tiro tiros[], int max_inimigos, int max
             inimigos[i].x += inimigos[i].dx;
             inimigos[i].y += inimigos[i].dy;
 
+            // Verifica se o inimigo saiu da tela
+            if (inimigos[i].x < -TAM_INIMIGO || inimigos[i].x > LARGURA ||
+                inimigos[i].y < -TAM_INIMIGO || inimigos[i].y > ALTURA) {
+                inimigos[i].ativo = false;
+            }
+            // Verifica colisão entre tiros e inimigos
             for (int j = 0; j < max_tiros; j++) {
-                if (tiros[j].ativo) {
+                
+                //se houverem tiros ativos,
+                if (tiros[j].ativo) 
+                {
+
+                    // Calcula a distância entre o tiro e o inimigo
                     float dx = inimigos[i].x - tiros[j].x;
                     float dy = inimigos[i].y - tiros[j].y;
                     float dist = sqrt(dx * dx + dy * dy);
+
+                    // Verifica se o tiro atingiu o inimigo
+                    // Se a distância for menor que o tamanho do inimigo, o tiro atinge
+                    // e o inimigo perde vida
                     if (dist < TAM_INIMIGO) {
                         tiros[j].ativo = false;
                         if (inimigos[i].b > 0) inimigos[i].b -= 50;
@@ -138,36 +153,66 @@ int inicia_jogo(ALLEGRO_DISPLAY* disp) {
     al_register_event_source(fila, al_get_timer_event_source(timer));
     al_start_timer(timer);
 
+    // Inicializa os arrays de tiros e inimigos
+    // Todos os tiros e inimigos começam inativos
     Tiro tiros[MAX_TIROS] = {0};
     Inimigo inimigos[MAX_INIMIGOS] = {0};
     float jogador_x = LARGURA / 2, jogador_y = ALTURA / 2;
     bool teclas[ALLEGRO_KEY_MAX] = {false};
 
+    // Variável para controlar o tempo de spawn dos inimigos
     double tempo_spawn = al_get_time();
     bool rodando = true;
     ALLEGRO_EVENT ev;
 
-    while (rodando) {
-        while (al_get_next_event(fila, &ev)) {
+    while (rodando) 
+    {
+        while (al_get_next_event(fila, &ev)) 
+        {
             if (ev.type == ALLEGRO_EVENT_DISPLAY_CLOSE) rodando = false;
-            else if (ev.type == ALLEGRO_EVENT_KEY_DOWN) {
+            else if (ev.type == ALLEGRO_EVENT_KEY_DOWN) 
+            {
+                // Marca a tecla pressionada como verdadeira
+                // Se a tecla for ESC, encerra o jogo
+                // Se a tecla for SPACE, dispara um tiro
                 teclas[ev.keyboard.keycode] = true;
                 if (ev.keyboard.keycode == ALLEGRO_KEY_ESCAPE) rodando = false;
                 else if (ev.keyboard.keycode == ALLEGRO_KEY_SPACE)
                     disparar_tiro(tiros, jogador_x + TAM_JOGADOR / 2, jogador_y + TAM_JOGADOR / 2);
             }
-            else if (ev.type == ALLEGRO_EVENT_KEY_UP) {
+            else if (ev.type == ALLEGRO_EVENT_KEY_UP) 
+            {
                 teclas[ev.keyboard.keycode] = false;
             }
         }
+
 
         get_movement(teclas, &jogador_x, &jogador_y);
         update_tiros(tiros, MAX_TIROS);
         update_inimigos(inimigos, tiros, MAX_INIMIGOS, MAX_TIROS);
 
+        // Garante que o jogador não saia da tela
+        if (jogador_x < 0) jogador_x = 0;
+        if (jogador_x + TAM_JOGADOR > LARGURA) jogador_x = LARGURA - TAM_JOGADOR;
+        if (jogador_y < 0) jogador_y = 0;
+        if (jogador_y + TAM_JOGADOR > ALTURA) jogador_y = ALTURA - TAM_JOGADOR;
+
+        // Gera novos inimigos a cada 30 segundos
+        // Se o tempo atual for maior que o tempo de spawn + 30 segundos, gera um novo inimigo
+        // e reseta o tempo de spawn
         if (al_get_time() - tempo_spawn >= 30.0) {
             gerar_inimigo(inimigos, MAX_INIMIGOS);
             tempo_spawn = al_get_time();
+        }
+
+        //garante que os inimigos não saiam da tela
+        for (int i = 0; i < MAX_INIMIGOS; i++) {
+            if (inimigos[i].ativo) {
+                if (inimigos[i].x < -TAM_INIMIGO) inimigos[i].x = LARGURA + TAM_INIMIGO;
+                if (inimigos[i].x > LARGURA) inimigos[i].x = -TAM_INIMIGO;
+                if (inimigos[i].y < -TAM_INIMIGO) inimigos[i].y = ALTURA + TAM_INIMIGO;
+                if (inimigos[i].y > ALTURA) inimigos[i].y = -TAM_INIMIGO;
+            }
         }
 
         desenhar_jogo(jogador_x, jogador_y, tiros, inimigos);
@@ -194,7 +239,8 @@ int inicia_instrucoes(ALLEGRO_DISPLAY* disp) {
     return 0;
 }
 
-int main() {
+int main() 
+{
     al_init();
     al_install_keyboard();
     al_init_image_addon();
