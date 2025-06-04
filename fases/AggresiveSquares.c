@@ -197,6 +197,23 @@ int inicia_jogo(ALLEGRO_DISPLAY* disp) {
         if (jogador_y < 0) jogador_y = 0;
         if (jogador_y + TAM_JOGADOR > ALTURA) jogador_y = ALTURA - TAM_JOGADOR;
 
+        // Verifica se o jogador colidiu com algum inimigo
+        //se colidiu, teleporta o jogador para 10px a trás
+        for (int i = 0; i < MAX_INIMIGOS; i++) {
+            if (inimigos[i].ativo) {
+                float dx = inimigos[i].x - (jogador_x + TAM_JOGADOR / 2);
+                float dy = inimigos[i].y - (jogador_y + TAM_JOGADOR / 2);
+                float dist = sqrt(dx * dx + dy * dy);
+                if (dist < TAM_INIMIGO + TAM_JOGADOR / 2) {
+                    // Teleporta o jogador para 10px atrás da posição atual
+                    if (jogador_x > 50) jogador_x -= 50;
+                    else jogador_x = 0; // Se estiver muito perto da borda, não deixa sair da tela
+                    if (jogador_y > 50) jogador_y -= 50;
+                    else jogador_y = 0; // Se estiver muito perto da borda, não deixa sair da tela
+                }
+            }
+        }
+
         // Gera novos inimigos a cada 30 segundos
         // Se o tempo atual for maior que o tempo de spawn + 30 segundos, gera um novo inimigo
         // e reseta o tempo de spawn
@@ -208,10 +225,15 @@ int inicia_jogo(ALLEGRO_DISPLAY* disp) {
         //garante que os inimigos não saiam da tela
         for (int i = 0; i < MAX_INIMIGOS; i++) {
             if (inimigos[i].ativo) {
-                if (inimigos[i].x < -TAM_INIMIGO) inimigos[i].x = LARGURA + TAM_INIMIGO;
-                if (inimigos[i].x > LARGURA) inimigos[i].x = -TAM_INIMIGO;
-                if (inimigos[i].y < -TAM_INIMIGO) inimigos[i].y = ALTURA + TAM_INIMIGO;
-                if (inimigos[i].y > ALTURA) inimigos[i].y = -TAM_INIMIGO;
+                if (inimigos[i].x < -TAM_INIMIGO) ;
+                if (inimigos[i].x > LARGURA) ;
+                if (inimigos[i].y < -TAM_INIMIGO) ;
+                if (inimigos[i].y > ALTURA) ;
+
+                if (inimigos[i].x < 0) inimigos[i].x = 0;
+                if (inimigos[i].x + TAM_INIMIGO > LARGURA) inimigos[i].x = LARGURA - TAM_INIMIGO;
+                if (inimigos[i].y < 0) inimigos[i].y = 0;
+                if (inimigos[i].y + TAM_INIMIGO > ALTURA) inimigos[i].y = ALTURA - TAM_INIMIGO;
             }
         }
 
