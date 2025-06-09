@@ -12,8 +12,8 @@
 
 #define OPCOES 3
 
-#define LARGURA 800
-#define ALTURA 600
+#define LARGURA 1920
+#define ALTURA 1080
 #define ALTURA_CHAO 150
 #define MAX_TIROS 100
 #define MAX_INIMIGOS 50
@@ -51,6 +51,43 @@ typedef struct {
     bool ativo;
     bool no_chao;
 } Inimigo;
+
+void tela_game_over(ALLEGRO_FONT* font, int zumbis_mortos) {
+    // Cria uma fila de eventos local apenas para esta tela
+    ALLEGRO_EVENT_QUEUE* fila_game_over = al_create_event_queue();
+    al_register_event_source(fila_game_over, al_get_keyboard_event_source());
+
+    bool sair = false;
+    while (!sair) {
+        // --- Desenho da Tela ---
+        al_clear_to_color(al_map_rgb(20, 0, 0)); // fundo_mapa vermelho bem escuro
+
+        // Texto "GAME OVER"
+        al_draw_text(font, al_map_rgb(200, 0, 0), LARGURA / 2, ALTURA / 3, ALLEGRO_ALIGN_CENTER, "GAME OVER");
+
+        // Exibe o número de zumbis derrotados
+        al_draw_textf(font, al_map_rgb(255, 255, 255), LARGURA / 2, ALTURA / 2, ALLEGRO_ALIGN_CENTER, "Zumbis derrotados: %d", zumbis_mortos);
+
+        // Instrução para o jogador
+        al_draw_text(font, al_map_rgb(150, 150, 150), LARGURA / 2, ALTURA - 100, ALLEGRO_ALIGN_CENTER, "Pressione ENTER para voltar ao menu");
+
+        al_flip_display();
+
+        // --- Lógica de Eventos ---
+        ALLEGRO_EVENT ev;
+        al_wait_for_event(fila_game_over, &ev);
+
+        if (ev.type == ALLEGRO_EVENT_KEY_DOWN) {
+            // Se o jogador pressionar ENTER ou ESC, sai da tela de Game Over
+            if (ev.keyboard.keycode == ALLEGRO_KEY_ENTER || ev.keyboard.keycode == ALLEGRO_KEY_ESCAPE) {
+                sair = true;
+            }
+        }
+    }
+
+    // Limpa a fila de eventos local
+    al_destroy_event_queue(fila_game_over);
+}
 
 void get_movement(bool *teclas, float *x, float *y) {
     if (teclas[ALLEGRO_KEY_W] && *y > 0) *y -= 4;
@@ -429,6 +466,16 @@ int inicia_jogo(ALLEGRO_DISPLAY* disp, ALLEGRO_FONT* font) {
                 al_draw_filled_circle(LARGURA - 15 - (i * 15), 25, 5, al_map_rgb(255, 255, 255));
             }
 
+            // Se o jogador estiver sem vida, chama a tela de Game Over e encerra o jogo
+            if (jogador.hp <= 0) {
+                // Adormece por um instante para o jogador ver o que aconteceu
+                al_rest(0.5); 
+                // Chama a nova tela
+                tela_game_over(font, zumbis_mortos);
+                // Sai do loop do jogo
+                rodando = false;
+            }
+
             al_flip_display();
             redesenhar = false;
         }
@@ -465,12 +512,12 @@ int main()
     ALLEGRO_TIMER* timer = al_create_timer(1.0 / 30.0);
     ALLEGRO_EVENT_QUEUE* queue = al_create_event_queue();
     ALLEGRO_DISPLAY* disp = al_create_display(LARGURA, ALTURA);
-    ALLEGRO_BITMAP* fundo = al_load_bitmap("orig_big.png");
+    ALLEGRO_BITMAP* fundo_mapa = al_load_bitmap("orig_big.png");
     ALLEGRO_FONT* font = al_load_ttf_font("font.ttf", 40, 0);
     
-    if (!disp || !fundo || !font || !timer || !queue) {
+    if (!disp || !fundo_mapa || !font || !timer || !queue) {
         if (!disp) fprintf(stderr, "Falha ao criar a janela.\n");
-        if (!fundo) fprintf(stderr, "Falha ao carregar a imagem de fundo.\n");
+        if (!fundo_mapa) fprintf(stderr, "Falha ao carregar a imagem de fundo_mapa.\n");
         if (!font) fprintf(stderr, "Falha ao carregar a fonte.\n");
         if (!timer) fprintf(stderr, "Falha ao criar o timer.\n");
         if (!queue) fprintf(stderr, "Falha ao criar a fila de eventos.\n");
@@ -513,7 +560,7 @@ int main()
         }
 
         else if (event.type == ALLEGRO_EVENT_TIMER) {
-            al_draw_bitmap(fundo, 0, 0, 0);
+            al_draw_bitmap(fundo_mapa, 0, 0, 0);
 
             for (int i = 0; i < OPCOES; i++) {
                 ALLEGRO_COLOR cor = (i == opcao_selecionada) ? al_map_rgb(255, 0, 0) : al_map_rgb(0, 0, 0);
@@ -525,7 +572,7 @@ int main()
     }
 
     al_destroy_font(font);
-    al_destroy_bitmap(fundo);
+    al_destroy_bitmap(fundo_mapa);
     al_destroy_timer(timer);
     al_destroy_event_queue(queue);
     al_destroy_display(disp);
