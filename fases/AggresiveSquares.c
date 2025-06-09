@@ -189,7 +189,7 @@ int inicia_jogo(ALLEGRO_DISPLAY* disp) {
     al_init_primitives_addon(); // Necessário para desenhar formas
 
     // Inicializações Allegro
-    ALLEGRO_TIMER* timer = al_create_timer(1.0 / 30.0);
+    ALLEGRO_TIMER* timer = al_create_timer(1.0 / 60.0);
     ALLEGRO_EVENT_QUEUE* fila = al_create_event_queue();
 
     al_register_event_source(fila, al_get_keyboard_event_source());
@@ -200,54 +200,104 @@ int inicia_jogo(ALLEGRO_DISPLAY* disp) {
 
     // Inicializa jogador
     Jogador jogador = {
-        .x = LARGURA / 2,
+        .x = LARGURA / 3,
         .y = ALTURA - ALTURA_CHAO - TAM_JOGADOR,
         .dy = 0,
         .no_chao = true
     };
 
+    // Inicializa tiros
+    Tiro tiros[MAX_TIROS] = {0};
+    // Inicializa inimigos
+    Inimigo inimigos[MAX_INIMIGOS] = {0};
+    int frames_inimigo = 0;
+
     bool teclas[ALLEGRO_KEY_MAX] = {false};
     ALLEGRO_EVENT ev;
     bool rodando = true;
+    bool redesenhar = true;
+
+    al_start_timer(timer);
 
     while (rodando) {
-        while (al_get_next_event(fila, &ev)) {
-            if (ev.type == ALLEGRO_EVENT_DISPLAY_CLOSE) {
+ al_wait_for_event(fila, &ev);
+
+        if (ev.type == ALLEGRO_EVENT_TIMER) {
+            // Movimento horizontal
+            if (teclas[ALLEGRO_KEY_A] && jogador.x > 0)
+                jogador.x -= 4;
+            if (teclas[ALLEGRO_KEY_D] && jogador.x + TAM_JOGADOR < LARGURA)
+                jogador.x += 4;
+
+            // 2. Chamar as funções de atualização para tudo
+            update_jogador(&jogador);
+            update_tiros(tiros, MAX_TIROS);
+            update_inimigos(inimigos, tiros, MAX_INIMIGOS, MAX_TIROS);
+
+            // 3. Gerar inimigos periodicamente
+            frames_inimigo++;
+            if (frames_inimigo >= 120) { // Gera um inimigo a cada 2 segundos (120 frames / 60 FPS)
+                gerar_inimigo(inimigos, MAX_INIMIGOS);
+                frames_inimigo = 0;
+            }
+
+            redesenhar = true;
+        }
+        else if (ev.type == ALLEGRO_EVENT_DISPLAY_CLOSE) {
+            rodando = false;
+        }
+        else if (ev.type == ALLEGRO_EVENT_KEY_DOWN) {
+            teclas[ev.keyboard.keycode] = true;
+
+            if (ev.keyboard.keycode == ALLEGRO_KEY_ESCAPE) {
                 rodando = false;
             }
-            else if (ev.type == ALLEGRO_EVENT_KEY_DOWN) {
-                teclas[ev.keyboard.keycode] = true;
 
-                if (ev.keyboard.keycode == ALLEGRO_KEY_ESCAPE)
-                    rodando = false;
-
-                if (ev.keyboard.keycode == ALLEGRO_KEY_W)
-                    pular(&jogador);
+            if (ev.keyboard.keycode == ALLEGRO_KEY_W) {
+                pular(&jogador);
             }
-            else if (ev.type == ALLEGRO_EVENT_KEY_UP) {
-                teclas[ev.keyboard.keycode] = false;
+
+            // 4. Adicionar evento de disparo (usei a tecla ESPAÇO)
+            if (ev.keyboard.keycode == ALLEGRO_KEY_SPACE) {
+                // Dispara a partir da posição do jogador
+                disparar_tiro(tiros, jogador.x + TAM_JOGADOR, jogador.y + (TAM_JOGADOR / 2) - (TAM_TIROS / 2));
             }
         }
+        else if (ev.type == ALLEGRO_EVENT_KEY_UP) {
+            teclas[ev.keyboard.keycode] = false;
+        }
 
-        // Movimento horizontal com limites
-        if (teclas[ALLEGRO_KEY_A] && jogador.x > 0)
-            jogador.x -= 4;
-        if (teclas[ALLEGRO_KEY_D] && jogador.x + TAM_JOGADOR < LARGURA)
-            jogador.x += 4;
+        // 5. Unificar toda a lógica de desenho aqui
+        // O desenho só ocorre quando a lógica do jogo é atualizada.
+        if (redesenhar && al_is_event_queue_empty(fila)) {
+            al_clear_to_color(al_map_rgb(0, 0, 0));
 
-        update_jogador(&jogador);
+            // Chão
+            al_draw_filled_rectangle(0, ALTURA - ALTURA_CHAO, LARGURA, ALTURA, al_map_rgb(34, 139, 34));
 
-        // Desenho
-        al_clear_to_color(al_map_rgb(0, 0, 0));
+            // Jogador
+            desenhar_jogador(&jogador);
 
-        // Chão verde
-        al_draw_filled_rectangle(0, ALTURA - ALTURA_CHAO, LARGURA, ALTURA, al_map_rgb(34, 139, 34));
+            // Tiros
+            for (int i = 0; i < MAX_TIROS; i++) {
+                if (tiros[i].ativo) {
+                    al_draw_filled_rectangle(tiros[i].x, tiros[i].y,
+                                             tiros[i].x + TAM_TIROS, tiros[i].y + 5,
+                                             al_map_rgb(255, 255, 0));
+                }
+            }
 
-        // Jogador
-        desenhar_jogador(&jogador);
+            // Inimigos
+            for (int i = 0; i < MAX_INIMIGOS; i++) {
+                if (inimigos[i].ativo) {
+                    ALLEGRO_COLOR cor = al_map_rgb((int)inimigos[i].r, (int)inimigos[i].g, (int)inimigos[i].b);
+                    al_draw_filled_circle(inimigos[i].x, inimigos[i].y, TAM_INIMIGO, cor);
+                }
+            }
 
-        al_flip_display();
-        al_rest(1.0 / 30.0);
+            al_flip_display();
+            redesenhar = false;
+        }
     }
 
     al_destroy_timer(timer);
