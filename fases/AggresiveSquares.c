@@ -21,6 +21,15 @@
 #define TAM_TIROS 10
 #define TAM_INIMIGO 20
 
+#define GRAVIDADE 0.5
+#define PULO_FORCA -10.0
+
+typedef struct {
+    float x, y;
+    float dy; //velocidade do jogador
+    bool no_chao;
+} Jogador;
+
 typedef struct {
     float x, y;
     float dx;
@@ -118,6 +127,34 @@ void update_inimigos(Inimigo inimigos[], Tiro tiros[], int max_inimigos, int max
     }
 }
 
+void update_jogador(Jogador *jogador) {
+    jogador->dy += GRAVIDADE; // Aplica a gravidade
+    jogador->y += jogador->dy; // Atualiza a posição vertical do jogador
+
+    float chao_y = ALTURA - ALTURA_CHAO - TAM_JOGADOR;
+    if (jogador->y > chao_y) {
+        jogador->y = chao_y; // Garante que o jogador não passe do chão
+        jogador->no_chao = true; // O jogador está no chão
+        jogador->dy = 0; // Reseta a velocidade vertical
+    } else {
+        jogador->no_chao = false; // O jogador está no ar
+    }
+}
+
+void pular(Jogador *jogador) {
+    if (jogador->no_chao) {
+        jogador->dy = PULO_FORCA; // Aplica a força do pulo
+        jogador->no_chao = false; // O jogador não está mais no chão
+    }
+}
+
+void desenhar_jogador(Jogador *jogador) {
+    al_draw_filled_rectangle(
+        jogador->x, jogador->y,
+        jogador->x + TAM_JOGADOR, jogador -> y + TAM_JOGADOR,
+        al_map_rgb(255, 128, 0)); // Cor laranja
+}
+
 void desenhar_jogo(float jogador_x, float jogador_y, Tiro tiros[], Inimigo inimigos[]) {
     al_clear_to_color(al_map_rgb(0, 0, 0));
 
@@ -149,111 +186,74 @@ void desenhar_jogo(float jogador_x, float jogador_y, Tiro tiros[], Inimigo inimi
 }
 
 int inicia_jogo(ALLEGRO_DISPLAY* disp) {
-    al_init_primitives_addon();
-    srand(time(NULL));
+    al_init_primitives_addon(); // Necessário para desenhar formas
 
+    // Inicializações Allegro
     ALLEGRO_TIMER* timer = al_create_timer(1.0 / 30.0);
     ALLEGRO_EVENT_QUEUE* fila = al_create_event_queue();
+
     al_register_event_source(fila, al_get_keyboard_event_source());
     al_register_event_source(fila, al_get_display_event_source(disp));
     al_register_event_source(fila, al_get_timer_event_source(timer));
+
     al_start_timer(timer);
 
-    // Inicializa os arrays de tiros e inimigos
-    // Todos os tiros e inimigos começam inativos
-    Tiro tiros[MAX_TIROS] = {0};
-    Inimigo inimigos[MAX_INIMIGOS] = {0};
-    float jogador_x = LARGURA / 3, jogador_y = ALTURA - ALTURA_CHAO - TAM_JOGADOR;
+    // Inicializa jogador
+    Jogador jogador = {
+        .x = LARGURA / 2,
+        .y = ALTURA - ALTURA_CHAO - TAM_JOGADOR,
+        .dy = 0,
+        .no_chao = true
+    };
+
     bool teclas[ALLEGRO_KEY_MAX] = {false};
-
-    // Variável para controlar o tempo de spawn dos inimigos
-    double tempo_spawn = al_get_time();
-    bool rodando = true;
     ALLEGRO_EVENT ev;
+    bool rodando = true;
 
-    while (rodando) 
-    {
-        while (al_get_next_event(fila, &ev)) 
-        {
-            if (ev.type == ALLEGRO_EVENT_DISPLAY_CLOSE) rodando = false;
-            else if (ev.type == ALLEGRO_EVENT_KEY_DOWN) 
-            {
-                // Marca a tecla pressionada como verdadeira
-                // Se a tecla for ESC, encerra o jogo
-                // Se a tecla for SPACE, dispara um tiro
-                teclas[ev.keyboard.keycode] = true;
-                if (ev.keyboard.keycode == ALLEGRO_KEY_ESCAPE) rodando = false;
-                else if (ev.keyboard.keycode == ALLEGRO_KEY_SPACE)
-                    disparar_tiro(tiros, jogador_x + TAM_JOGADOR / 2, jogador_y + TAM_JOGADOR / 2);
+    while (rodando) {
+        while (al_get_next_event(fila, &ev)) {
+            if (ev.type == ALLEGRO_EVENT_DISPLAY_CLOSE) {
+                rodando = false;
             }
-            else if (ev.type == ALLEGRO_EVENT_KEY_UP) 
-            {
+            else if (ev.type == ALLEGRO_EVENT_KEY_DOWN) {
+                teclas[ev.keyboard.keycode] = true;
+
+                if (ev.keyboard.keycode == ALLEGRO_KEY_ESCAPE)
+                    rodando = false;
+
+                if (ev.keyboard.keycode == ALLEGRO_KEY_W)
+                    pular(&jogador);
+            }
+            else if (ev.type == ALLEGRO_EVENT_KEY_UP) {
                 teclas[ev.keyboard.keycode] = false;
             }
         }
 
+        // Movimento horizontal com limites
+        if (teclas[ALLEGRO_KEY_A] && jogador.x > 0)
+            jogador.x -= 4;
+        if (teclas[ALLEGRO_KEY_D] && jogador.x + TAM_JOGADOR < LARGURA)
+            jogador.x += 4;
 
-        get_movement(teclas, &jogador_x, &jogador_y);
-        update_tiros(tiros, MAX_TIROS);
-        update_inimigos(inimigos, tiros, MAX_INIMIGOS, MAX_TIROS);
+        update_jogador(&jogador);
 
-        // Garante que o jogador não saia da tela nas laterais
-        if (jogador_x < 0) jogador_x = 0;
-        if (jogador_x + TAM_JOGADOR > LARGURA) jogador_x = LARGURA - TAM_JOGADOR;
-        // e que fique em cima da plataforma (altura 200px a cima do chão)
-        if (jogador_y < 200) jogador_y = 200;
-        if (jogador_y + TAM_JOGADOR > ALTURA) jogador_y = ALTURA - TAM_JOGADOR;
+        // Desenho
+        al_clear_to_color(al_map_rgb(0, 0, 0));
 
+        // Chão verde
+        al_draw_filled_rectangle(0, ALTURA - ALTURA_CHAO, LARGURA, ALTURA, al_map_rgb(34, 139, 34));
 
-        // Verifica se o jogador colidiu com algum inimigo
-        //se colidiu, teleporta o jogador para 10px a trás
-        for (int i = 0; i < MAX_INIMIGOS; i++) {
-            if (inimigos[i].ativo) {
-                float dx = inimigos[i].x - (jogador_x + TAM_JOGADOR / 2);
-                float dy = inimigos[i].y - (jogador_y + TAM_JOGADOR / 2);
-                float dist = sqrt(dx * dx + dy * dy);
-                if (dist < TAM_INIMIGO + TAM_JOGADOR / 2) {
-                    // Teleporta o jogador para 10px atrás da posição atual
-                    if (jogador_x > 50) jogador_x -= 50;
-                    else jogador_x = 0; // Se estiver muito perto da borda, não deixa sair da tela
-                    if (jogador_y > 50) jogador_y -= 50;
-                    else jogador_y = 0; // Se estiver muito perto da borda, não deixa sair da tela
-                }
-            }
-        }
+        // Jogador
+        desenhar_jogador(&jogador);
 
-        // Gera novos inimigos a cada 30 segundos
-        // Se o tempo atual for maior que o tempo de spawn + 30 segundos, gera um novo inimigo
-        // e reseta o tempo de spawn
-        if (al_get_time() - tempo_spawn >= 30.0) {
-            gerar_inimigo(inimigos, MAX_INIMIGOS);
-            tempo_spawn = al_get_time();
-        }
-
-        //garante que os inimigos não saiam da tela
-        for (int i = 0; i < MAX_INIMIGOS; i++) {
-            if (inimigos[i].ativo) {
-                if (inimigos[i].x < -TAM_INIMIGO) ;
-                if (inimigos[i].x > LARGURA) ;
-                if (inimigos[i].y < -TAM_INIMIGO) ;
-                if (inimigos[i].y > ALTURA) ;
-
-                if (inimigos[i].x < 0) inimigos[i].x = 0;
-                if (inimigos[i].x + TAM_INIMIGO > LARGURA) inimigos[i].x = LARGURA - TAM_INIMIGO;
-                if (inimigos[i].y < 0) inimigos[i].y = 0;
-                if (inimigos[i].y + TAM_INIMIGO > ALTURA) inimigos[i].y = ALTURA - TAM_INIMIGO;
-            }
-        }
-
-        desenhar_jogo(jogador_x, jogador_y, tiros, inimigos);
+        al_flip_display();
         al_rest(1.0 / 30.0);
     }
 
-    al_destroy_event_queue(fila);
     al_destroy_timer(timer);
+    al_destroy_event_queue(fila);
     return 0;
 }
-
 
 int inicia_configuracoes(ALLEGRO_DISPLAY* disp) {
     al_clear_to_color(al_map_rgb(0, 0, 255));
