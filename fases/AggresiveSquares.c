@@ -30,6 +30,7 @@ typedef struct {
     float x, y;
     float dy; //velocidade do jogador
     bool no_chao;
+    int direcao;
 } Jogador;
 
 typedef struct {
@@ -53,12 +54,13 @@ void get_movement(bool *teclas, float *x, float *y) {
     if (teclas[ALLEGRO_KEY_D] && *x + TAM_JOGADOR < LARGURA) *x += 4;
 }
 
-void disparar_tiro(Tiro tiros[], float x, float y) {
+// A assinatura agora recebe a direção
+void disparar_tiro(Tiro tiros[], float x, float y, int direcao) {
     for (int i = 0; i < MAX_TIROS; i++) {
         if (!tiros[i].ativo) {
             tiros[i].x = x;
             tiros[i].y = y;
-            tiros[i].dx = 10;
+            tiros[i].dx = 10 * direcao;
             tiros[i].ativo = true;
             break;
         }
@@ -69,7 +71,9 @@ void update_tiros(Tiro tiros[], int max) {
     for (int i = 0; i < max; i++) {
         if (tiros[i].ativo) {
             tiros[i].x += tiros[i].dx;
-            if (tiros[i].x > LARGURA) tiros[i].ativo = false;
+            if (tiros[i].x > LARGURA || tiros[i].x < 0) {
+                tiros[i].ativo = false;
+            }
         }
     }
 }
@@ -95,7 +99,6 @@ void gerar_inimigo(Inimigo inimigos[], int max) {
     }
 }
 
-// A assinatura agora recebe ponteiros para o score e para o contador de zumbis mortos
 void update_inimigos(Inimigo inimigos[], Tiro tiros[], Jogador *jogador, int *zumbis_mortos, int max_inimigos, int max_tiros) {    for (int i = 0; i < max_inimigos; i++) {
         if (inimigos[i].ativo) {
             // --- Lógica de Movimento do Zumbi (sem alteração) ---
@@ -207,7 +210,6 @@ void desenhar_jogo(float jogador_x, float jogador_y, Tiro tiros[], Inimigo inimi
 int inicia_jogo(ALLEGRO_DISPLAY* disp, ALLEGRO_FONT* font) {
     al_init_primitives_addon(); // Necessário para desenhar formas
 
-    // Inicializações Allegro
     ALLEGRO_TIMER* timer = al_create_timer(1.0 / 60.0);
     ALLEGRO_EVENT_QUEUE* fila = al_create_event_queue();
 
@@ -215,24 +217,24 @@ int inicia_jogo(ALLEGRO_DISPLAY* disp, ALLEGRO_FONT* font) {
     al_register_event_source(fila, al_get_display_event_source(disp));
     al_register_event_source(fila, al_get_timer_event_source(timer));
 
-    al_start_timer(timer);
-
-    // Inicializa jogador
+    // Inicializa jogador com o campo 'direcao'
     Jogador jogador = {
-        .x = LARGURA / 3,
+        .x = LARGURA / 2,
         .y = ALTURA - ALTURA_CHAO - TAM_JOGADOR,
         .dy = 0,
-        .no_chao = true
+        .no_chao = true,
+        .direcao = 1 // Começa virado para a direita
     };
 
-    // Inicializa tiros
+    // Inicializa arrays de tiros e inimigos
     Tiro tiros[MAX_TIROS] = {0};
-    // Inicializa inimigos
     Inimigo inimigos[MAX_INIMIGOS] = {0};
     int frames_inimigo = 0;
 
+    // Variável para o contador de mortes
     int zumbis_mortos = 0;
 
+    // Controles do jogo
     bool teclas[ALLEGRO_KEY_MAX] = {false};
     ALLEGRO_EVENT ev;
     bool rodando = true;
@@ -241,59 +243,79 @@ int inicia_jogo(ALLEGRO_DISPLAY* disp, ALLEGRO_FONT* font) {
     al_start_timer(timer);
 
     while (rodando) {
- al_wait_for_event(fila, &ev);
+        al_wait_for_event(fila, &ev);
 
+        // --- LÓGICA DO TIMER (ATUALIZAÇÃO DO ESTADO DO JOGO) ---
         if (ev.type == ALLEGRO_EVENT_TIMER) {
-            // Movimento horizontal
-            if (teclas[ALLEGRO_KEY_A] && jogador.x > 0)
+            // Aplica o movimento baseado nas teclas pressionadas
+            if (teclas[ALLEGRO_KEY_A] && jogador.x > 0) {
                 jogador.x -= 4;
-            if (teclas[ALLEGRO_KEY_D] && jogador.x + TAM_JOGADOR < LARGURA)
+            } else if (teclas[ALLEGRO_KEY_D] && jogador.x + TAM_JOGADOR < LARGURA) {
                 jogador.x += 4;
+            }
 
-            // 2. Chamar as funções de atualização para tudo
+            // Atualiza a física do jogador e dos objetos
             update_jogador(&jogador);
             update_tiros(tiros, MAX_TIROS);
             update_inimigos(inimigos, tiros, &jogador, &zumbis_mortos, MAX_INIMIGOS, MAX_TIROS);
 
-            // 3. Gerar inimigos periodicamente
+            // Gera novos inimigos periodicamente
             frames_inimigo++;
-            if (frames_inimigo >= 120) { // Gera um inimigo a cada 2 segundos (120 frames / 60 FPS)
+            if (frames_inimigo >= 120) { // Gera um inimigo a cada 2 segundos
                 gerar_inimigo(inimigos, MAX_INIMIGOS);
                 frames_inimigo = 0;
             }
 
             redesenhar = true;
         }
+
+        // --- LÓGICA DE EVENTOS DE ENTRADA (INPUT) ---
         else if (ev.type == ALLEGRO_EVENT_DISPLAY_CLOSE) {
             rodando = false;
         }
         else if (ev.type == ALLEGRO_EVENT_KEY_DOWN) {
             teclas[ev.keyboard.keycode] = true;
 
-            if (ev.keyboard.keycode == ALLEGRO_KEY_ESCAPE) {
+            // Atualiza a direção imediatamente ao pressionar a tecla
+            if (ev.keyboard.keycode == ALLEGRO_KEY_A) {
+                jogador.direcao = -1;
+            } else if (ev.keyboard.keycode == ALLEGRO_KEY_D) {
+                jogador.direcao = 1;
+            }
+
+            // Ações de pressionar (pulo, tiro, sair)
+            if (ev.keyboard.keycode == ALLEGRO_KEY_ESCAPE)
                 rodando = false;
-            }
 
-            if (ev.keyboard.keycode == ALLEGRO_KEY_W) {
+            if (ev.keyboard.keycode == ALLEGRO_KEY_W)
                 pular(&jogador);
-            }
 
-            // 4. Adicionar evento de disparo (usei a tecla ESPAÇO)
             if (ev.keyboard.keycode == ALLEGRO_KEY_SPACE) {
-                // Dispara a partir da posição do jogador
-                disparar_tiro(tiros, jogador.x + TAM_JOGADOR, jogador.y + (TAM_JOGADOR / 2) - (TAM_TIROS / 2));
+                float tiro_x;
+                if (jogador.direcao == 1) { // Direita
+                    tiro_x = jogador.x + TAM_JOGADOR;
+                } else { // Esquerda
+                    tiro_x = jogador.x - TAM_TIROS;
+                }
+                disparar_tiro(tiros, tiro_x, jogador.y + (TAM_JOGADOR / 2) - (TAM_TIROS / 2), jogador.direcao);
             }
         }
         else if (ev.type == ALLEGRO_EVENT_KEY_UP) {
             teclas[ev.keyboard.keycode] = false;
+
+            // Atualiza a direção se uma tecla for solta e a outra continuar pressionada
+            if (ev.keyboard.keycode == ALLEGRO_KEY_A && teclas[ALLEGRO_KEY_D]) {
+                jogador.direcao = 1;
+            } else if (ev.keyboard.keycode == ALLEGRO_KEY_D && teclas[ALLEGRO_KEY_A]) {
+                jogador.direcao = -1;
+            }
         }
 
-        // 5. Unificar toda a lógica de desenho aqui
-        // O desenho só ocorre quando a lógica do jogo é atualizada.
+        // --- LÓGICA DE DESENHO ---
         if (redesenhar && al_is_event_queue_empty(fila)) {
             al_clear_to_color(al_map_rgb(0, 0, 0));
 
-            // Chão
+            // Chão verde
             al_draw_filled_rectangle(0, ALTURA - ALTURA_CHAO, LARGURA, ALTURA, al_map_rgb(34, 139, 34));
 
             // Jogador
@@ -316,15 +338,13 @@ int inicia_jogo(ALLEGRO_DISPLAY* disp, ALLEGRO_FONT* font) {
                 }
             }
 
-             // Desenha o texto das mortes de zumbis no canto superior esquerdo
             al_draw_textf(font, al_map_rgb(255, 255, 255), 10, 10, 0, "MORTES: %d", zumbis_mortos);
 
-            // Desenha as "bolinhas" (futuras caveiras) no canto superior direito
+
+            // Contador de zumbis mortos (bolinhas brancas)
             for (int i = 0; i < zumbis_mortos; i++) {
-                // Cada bolinha tem 10 pixels de largura e um espaçamento de 5 pixels
                 al_draw_filled_circle(LARGURA - 15 - (i * 15), 25, 5, al_map_rgb(255, 255, 255));
             }
-
 
             al_flip_display();
             redesenhar = false;
