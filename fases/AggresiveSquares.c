@@ -95,19 +95,16 @@ void gerar_inimigo(Inimigo inimigos[], int max) {
     }
 }
 
-void update_inimigos(Inimigo inimigos[], Tiro tiros[], Jogador *jogador, int max_inimigos, int max_tiros) {
-    for (int i = 0; i < max_inimigos; i++) {
+// A assinatura agora recebe ponteiros para o score e para o contador de zumbis mortos
+void update_inimigos(Inimigo inimigos[], Tiro tiros[], Jogador *jogador, int *zumbis_mortos, int max_inimigos, int max_tiros) {    for (int i = 0; i < max_inimigos; i++) {
         if (inimigos[i].ativo) {
-            // --- Lógica de Movimento do Zumbi ---
-            // O zumbi agora persegue o jogador no eixo X.
+            // --- Lógica de Movimento do Zumbi (sem alteração) ---
             if (inimigos[i].x < jogador->x) {
-                inimigos[i].x += VELOCIDADE_ZUMBI; // Se o zumbi está à esquerda do jogador, move para a direita.
+                inimigos[i].x += VELOCIDADE_ZUMBI;
             } else if (inimigos[i].x > jogador->x) {
-                inimigos[i].x -= VELOCIDADE_ZUMBI; // Se o zumbi está à direita do jogador, move para a esquerda.
+                inimigos[i].x -= VELOCIDADE_ZUMBI;
             }
 
-            // A lógica de gravidade e colisão com o chão permanece a mesma,
-            // garantindo que o zumbi não voe.
             inimigos[i].dy += GRAVIDADE;
             inimigos[i].y += inimigos[i].dy;
 
@@ -120,12 +117,11 @@ void update_inimigos(Inimigo inimigos[], Tiro tiros[], Jogador *jogador, int max
                 inimigos[i].no_chao = false;
             }
 
-            // Desativa o inimigo se ele sair muito da tela
             if (inimigos[i].x < -TAM_INIMIGO - 20 || inimigos[i].x > LARGURA + 20) {
                 inimigos[i].ativo = false;
             }
 
-            // --- Lógica de Colisão com Tiros (sem alteração) ---
+            // --- Lógica de Colisão com Tiros ---
             for (int j = 0; j < max_tiros; j++) {
                 if (tiros[j].ativo) {
                     float dx = inimigos[i].x - tiros[j].x;
@@ -137,8 +133,12 @@ void update_inimigos(Inimigo inimigos[], Tiro tiros[], Jogador *jogador, int max
                         if (inimigos[i].b > 0) inimigos[i].b -= 50;
                         if (inimigos[i].r < 255) inimigos[i].r += 25;
                         if (inimigos[i].g < 255) inimigos[i].g += 25;
-                        if (inimigos[i].b <= 0 && inimigos[i].r >= 255 && inimigos[i].g >= 255)
+
+                        // Se o inimigo morrer...
+                        if (inimigos[i].b <= 0 && inimigos[i].r >= 255 && inimigos[i].g >= 255) {
                             inimigos[i].ativo = false;
+                            (*zumbis_mortos)++; // Mantém apenas o contador de mortes.
+                        }
                     }
                 }
             }
@@ -204,7 +204,7 @@ void desenhar_jogo(float jogador_x, float jogador_y, Tiro tiros[], Inimigo inimi
     al_flip_display();
 }
 
-int inicia_jogo(ALLEGRO_DISPLAY* disp) {
+int inicia_jogo(ALLEGRO_DISPLAY* disp, ALLEGRO_FONT* font) {
     al_init_primitives_addon(); // Necessário para desenhar formas
 
     // Inicializações Allegro
@@ -231,6 +231,8 @@ int inicia_jogo(ALLEGRO_DISPLAY* disp) {
     Inimigo inimigos[MAX_INIMIGOS] = {0};
     int frames_inimigo = 0;
 
+    int zumbis_mortos = 0;
+
     bool teclas[ALLEGRO_KEY_MAX] = {false};
     ALLEGRO_EVENT ev;
     bool rodando = true;
@@ -251,7 +253,7 @@ int inicia_jogo(ALLEGRO_DISPLAY* disp) {
             // 2. Chamar as funções de atualização para tudo
             update_jogador(&jogador);
             update_tiros(tiros, MAX_TIROS);
-            update_inimigos(inimigos, tiros, &jogador, MAX_INIMIGOS, MAX_TIROS);
+            update_inimigos(inimigos, tiros, &jogador, &zumbis_mortos, MAX_INIMIGOS, MAX_TIROS);
 
             // 3. Gerar inimigos periodicamente
             frames_inimigo++;
@@ -313,6 +315,16 @@ int inicia_jogo(ALLEGRO_DISPLAY* disp) {
                     al_draw_filled_circle(inimigos[i].x, inimigos[i].y, TAM_INIMIGO, cor);
                 }
             }
+
+             // Desenha o texto das mortes de zumbis no canto superior esquerdo
+            al_draw_textf(font, al_map_rgb(255, 255, 255), 10, 10, 0, "MORTES: %d", zumbis_mortos);
+
+            // Desenha as "bolinhas" (futuras caveiras) no canto superior direito
+            for (int i = 0; i < zumbis_mortos; i++) {
+                // Cada bolinha tem 10 pixels de largura e um espaçamento de 5 pixels
+                al_draw_filled_circle(LARGURA - 15 - (i * 15), 25, 5, al_map_rgb(255, 255, 255));
+            }
+
 
             al_flip_display();
             redesenhar = false;
@@ -378,7 +390,7 @@ int main()
                 opcao_selecionada = (opcao_selecionada + 1) % OPCOES;
             } else if (event.keyboard.keycode == ALLEGRO_KEY_ENTER) {
                 if (opcao_selecionada == 0) {
-                    inicia_jogo(disp);
+                    inicia_jogo(disp, font);
                 } else if (opcao_selecionada == 1) {
                     inicia_configuracoes(disp);
                 } else if (opcao_selecionada == 2) {
