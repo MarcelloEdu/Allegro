@@ -14,6 +14,7 @@
 
 #define LARGURA 800
 #define ALTURA 600
+#define ALTURA_CHAO 150
 #define MAX_TIROS 100
 #define MAX_INIMIGOS 50
 #define TAM_JOGADOR 30
@@ -34,10 +35,10 @@ typedef struct {
 } Inimigo;
 
 void get_movement(bool *teclas, float *x, float *y) {
-    if (teclas[ALLEGRO_KEY_W]) *y -= 4;
-    if (teclas[ALLEGRO_KEY_S]) *y += 4;
-    if (teclas[ALLEGRO_KEY_A]) *x -= 4;
-    if (teclas[ALLEGRO_KEY_D]) *x += 4;
+    if (teclas[ALLEGRO_KEY_W] && *y > 0) *y -= 4;
+    if (teclas[ALLEGRO_KEY_S] && *y + TAM_JOGADOR < ALTURA - ALTURA_CHAO) *y += 4;
+    if (teclas[ALLEGRO_KEY_A] && *x > 0) *x -= 4;
+    if (teclas[ALLEGRO_KEY_D] && *x + TAM_JOGADOR < LARGURA) *x += 4;
 }
 
 void disparar_tiro(Tiro tiros[], float x, float y) {
@@ -120,6 +121,11 @@ void update_inimigos(Inimigo inimigos[], Tiro tiros[], int max_inimigos, int max
 void desenhar_jogo(float jogador_x, float jogador_y, Tiro tiros[], Inimigo inimigos[]) {
     al_clear_to_color(al_map_rgb(0, 0, 0));
 
+    al_draw_filled_rectangle(0, ALTURA - ALTURA_CHAO,
+                            LARGURA, ALTURA, 
+                            al_map_rgb(34, 139, 34));  // verde grama
+
+
     al_draw_filled_rectangle(jogador_x, jogador_y,
                              jogador_x + TAM_JOGADOR, jogador_y + TAM_JOGADOR,
                              al_map_rgb(255, 128, 0));
@@ -157,7 +163,7 @@ int inicia_jogo(ALLEGRO_DISPLAY* disp) {
     // Todos os tiros e inimigos começam inativos
     Tiro tiros[MAX_TIROS] = {0};
     Inimigo inimigos[MAX_INIMIGOS] = {0};
-    float jogador_x = LARGURA / 2, jogador_y = ALTURA / 2;
+    float jogador_x = LARGURA / 3, jogador_y = ALTURA - ALTURA_CHAO - TAM_JOGADOR;
     bool teclas[ALLEGRO_KEY_MAX] = {false};
 
     // Variável para controlar o tempo de spawn dos inimigos
@@ -191,11 +197,13 @@ int inicia_jogo(ALLEGRO_DISPLAY* disp) {
         update_tiros(tiros, MAX_TIROS);
         update_inimigos(inimigos, tiros, MAX_INIMIGOS, MAX_TIROS);
 
-        // Garante que o jogador não saia da tela
+        // Garante que o jogador não saia da tela nas laterais
         if (jogador_x < 0) jogador_x = 0;
         if (jogador_x + TAM_JOGADOR > LARGURA) jogador_x = LARGURA - TAM_JOGADOR;
-        if (jogador_y < 0) jogador_y = 0;
+        // e que fique em cima da plataforma (altura 200px a cima do chão)
+        if (jogador_y < 200) jogador_y = 200;
         if (jogador_y + TAM_JOGADOR > ALTURA) jogador_y = ALTURA - TAM_JOGADOR;
+
 
         // Verifica se o jogador colidiu com algum inimigo
         //se colidiu, teleporta o jogador para 10px a trás
