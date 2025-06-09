@@ -21,6 +21,8 @@
 #define TAM_TIROS 10
 #define TAM_INIMIGO 20
 
+#define VELOCIDADE_ZUMBI 1.0
+
 #define GRAVIDADE 0.5
 #define PULO_FORCA -10.0
 
@@ -41,6 +43,7 @@ typedef struct {
     float dx, dy;
     float r, g, b; //vai ser uma representação do HP 
     bool ativo;
+    bool no_chao;
 } Inimigo;
 
 void get_movement(bool *teclas, float *x, float *y) {
@@ -74,10 +77,15 @@ void update_tiros(Tiro tiros[], int max) {
 void gerar_inimigo(Inimigo inimigos[], int max) {
     for (int i = 0; i < max; i++) {
         if (!inimigos[i].ativo) {
-            inimigos[i].x = rand() % LARGURA - 100;
-            inimigos[i].y = rand() % ALTURA - 100;
-            inimigos[i].dx = ((rand() % 5) - 2);
-            inimigos[i].dy = ((rand() % 5) - 2);
+            // simulando que estão vindo "de frente" no cenário.
+            inimigos[i].x = LARGURA;
+
+            //posicionando o zumbi no chão.
+            inimigos[i].y = ALTURA - ALTURA_CHAO - TAM_INIMIGO;
+            inimigos[i].dy = 0;
+            inimigos[i].no_chao = true;
+
+            // Cor/vida inicial
             inimigos[i].r = 0;
             inimigos[i].g = 0;
             inimigos[i].b = 255;
@@ -87,32 +95,43 @@ void gerar_inimigo(Inimigo inimigos[], int max) {
     }
 }
 
-void update_inimigos(Inimigo inimigos[], Tiro tiros[], int max_inimigos, int max_tiros) {
+void update_inimigos(Inimigo inimigos[], Tiro tiros[], Jogador *jogador, int max_inimigos, int max_tiros) {
     for (int i = 0; i < max_inimigos; i++) {
         if (inimigos[i].ativo) {
-            inimigos[i].x += inimigos[i].dx;
+            // --- Lógica de Movimento do Zumbi ---
+            // O zumbi agora persegue o jogador no eixo X.
+            if (inimigos[i].x < jogador->x) {
+                inimigos[i].x += VELOCIDADE_ZUMBI; // Se o zumbi está à esquerda do jogador, move para a direita.
+            } else if (inimigos[i].x > jogador->x) {
+                inimigos[i].x -= VELOCIDADE_ZUMBI; // Se o zumbi está à direita do jogador, move para a esquerda.
+            }
+
+            // A lógica de gravidade e colisão com o chão permanece a mesma,
+            // garantindo que o zumbi não voe.
+            inimigos[i].dy += GRAVIDADE;
             inimigos[i].y += inimigos[i].dy;
 
-            // Verifica se o inimigo saiu da tela
-            if (inimigos[i].x < -TAM_INIMIGO || inimigos[i].x > LARGURA ||
-                inimigos[i].y < -TAM_INIMIGO || inimigos[i].y > ALTURA) {
+            float chao_y = ALTURA - ALTURA_CHAO - TAM_INIMIGO;
+            if (inimigos[i].y > chao_y) {
+                inimigos[i].y = chao_y;
+                inimigos[i].no_chao = true;
+                inimigos[i].dy = 0;
+            } else {
+                inimigos[i].no_chao = false;
+            }
+
+            // Desativa o inimigo se ele sair muito da tela
+            if (inimigos[i].x < -TAM_INIMIGO - 20 || inimigos[i].x > LARGURA + 20) {
                 inimigos[i].ativo = false;
             }
-            // Verifica colisão entre tiros e inimigos
-            for (int j = 0; j < max_tiros; j++) {
-                
-                //se houverem tiros ativos,
-                if (tiros[j].ativo) 
-                {
 
-                    // Calcula a distância entre o tiro e o inimigo
+            // --- Lógica de Colisão com Tiros (sem alteração) ---
+            for (int j = 0; j < max_tiros; j++) {
+                if (tiros[j].ativo) {
                     float dx = inimigos[i].x - tiros[j].x;
                     float dy = inimigos[i].y - tiros[j].y;
                     float dist = sqrt(dx * dx + dy * dy);
 
-                    // Verifica se o tiro atingiu o inimigo
-                    // Se a distância for menor que o tamanho do inimigo, o tiro atinge
-                    // e o inimigo perde vida
                     if (dist < TAM_INIMIGO) {
                         tiros[j].ativo = false;
                         if (inimigos[i].b > 0) inimigos[i].b -= 50;
@@ -232,7 +251,7 @@ int inicia_jogo(ALLEGRO_DISPLAY* disp) {
             // 2. Chamar as funções de atualização para tudo
             update_jogador(&jogador);
             update_tiros(tiros, MAX_TIROS);
-            update_inimigos(inimigos, tiros, MAX_INIMIGOS, MAX_TIROS);
+            update_inimigos(inimigos, tiros, &jogador, MAX_INIMIGOS, MAX_TIROS);
 
             // 3. Gerar inimigos periodicamente
             frames_inimigo++;
