@@ -22,6 +22,7 @@
 #define TAM_INIMIGO 20
 
 #define VELOCIDADE_ZUMBI 1.0
+#define VELOCIDADE_BASE 2.0
 
 #define GRAVIDADE 0.5
 #define PULO_FORCA -10.0
@@ -31,6 +32,10 @@ typedef struct {
     float dy; //velocidade do jogador
     bool no_chao;
     int direcao;
+    int hp;
+    float velocidade; // velocidade do jogador
+    int intangivel_timer;
+
 } Jogador;
 
 typedef struct {
@@ -54,7 +59,52 @@ void get_movement(bool *teclas, float *x, float *y) {
     if (teclas[ALLEGRO_KEY_D] && *x + TAM_JOGADOR < LARGURA) *x += 4;
 }
 
-// A assinatura agora recebe a direção
+void atualizar_velocidade_jogador(Jogador *jogador) {
+    if (jogador->hp > 4) {
+        jogador->velocidade = 1.0 + (jogador->hp - 4) * 0.25;
+    } else if (jogador->hp > 0) {
+        jogador->velocidade = 1.0 - (4 - jogador->hp) * 0.25;
+    } else {
+        jogador->velocidade = 0; // Jogador para se estiver sem vida
+    }
+}
+
+void aplicar_dano_jogador(Jogador *jogador, Inimigo inimigos[], int max_inimigos) {
+    // Se o jogador está intangível, ele não pode levar dano.
+    if (jogador->intangivel_timer > 0) {
+        return;
+    }
+
+    for (int i = 0; i < max_inimigos; i++) {
+        if (inimigos[i].ativo) {
+            // Verificação de colisão simples (quadrado com círculo aproximado como quadrado)
+            bool colidiu = (jogador->x < inimigos[i].x + TAM_INIMIGO &&
+                          jogador->x + TAM_JOGADOR > inimigos[i].x &&
+                          jogador->y < inimigos[i].y + TAM_INIMIGO &&
+                          jogador->y + TAM_JOGADOR > inimigos[i].y);
+
+            if (colidiu) {
+                jogador->hp--; // Perde 1 de vida
+                jogador->intangivel_timer = 180; // Fica intangível por 3 segundos (180 frames / 60 FPS)
+
+                // Aplica knockback (empurrão para trás)
+                // Se o inimigo está à direita, empurra o jogador para a esquerda.
+                if (inimigos[i].x > jogador->x) {
+                    jogador->x -= 30;
+                } else { // Se o inimigo está à esquerda, empurra para a direita.
+                    jogador->x += 30;
+                }
+
+                // Atualiza a velocidade do jogador baseada na nova vida
+                atualizar_velocidade_jogador(jogador);
+
+                // Sai do loop para não receber múltiplos danos no mesmo frame.
+                break;
+            }
+        }
+    }
+}
+
 void disparar_tiro(Tiro tiros[], float x, float y, int direcao) {
     for (int i = 0; i < MAX_TIROS; i++) {
         if (!tiros[i].ativo) {
@@ -223,7 +273,10 @@ int inicia_jogo(ALLEGRO_DISPLAY* disp, ALLEGRO_FONT* font) {
         .y = ALTURA - ALTURA_CHAO - TAM_JOGADOR,
         .dy = 0,
         .no_chao = true,
-        .direcao = 1 // Começa virado para a direita
+        .direcao = 1, // Começa virado para a direita
+        .hp = 8, // Vida inicial do jogador
+        .velocidade = 1.0, // Velocidade inicial do jogador
+        .intangivel_timer = 0 // Jogador começa tangível
     };
 
     // Inicializa arrays de tiros e inimigos
@@ -239,6 +292,7 @@ int inicia_jogo(ALLEGRO_DISPLAY* disp, ALLEGRO_FONT* font) {
     ALLEGRO_EVENT ev;
     bool rodando = true;
     bool redesenhar = true;
+    int frame_conter = 0;
 
     al_start_timer(timer);
 
@@ -247,25 +301,40 @@ int inicia_jogo(ALLEGRO_DISPLAY* disp, ALLEGRO_FONT* font) {
 
         // --- LÓGICA DO TIMER (ATUALIZAÇÃO DO ESTADO DO JOGO) ---
         if (ev.type == ALLEGRO_EVENT_TIMER) {
-            // Aplica o movimento baseado nas teclas pressionadas
-            if (teclas[ALLEGRO_KEY_A] && jogador.x > 0) {
-                jogador.x -= 4;
-            } else if (teclas[ALLEGRO_KEY_D] && jogador.x + TAM_JOGADOR < LARGURA) {
-                jogador.x += 4;
+            frame_conter++;
+
+            if(jogador.hp <= 0) {
+                al_clear_to_color(al_map_rgb(255, 0, 0)); // Tela vermelha se o jogador morrer
+                al_draw_text(font, al_map_rgb(255, 255, 255), LARGURA / 2, ALTURA / 2, ALLEGRO_ALIGN_CENTER, "GAME OVER");
+                al_flip_display();
+                rodando = false; // Encerra o jogo se o jogador morrer
             }
 
-            // Atualiza a física do jogador e dos objetos
+            // Decrementa o timer de intangibilidade
+            if (jogador.intangivel_timer > 0) {
+                jogador.intangivel_timer--;
+            }
+
+            // Verifica colisão e aplica dano
+            aplicar_dano_jogador(&jogador, inimigos, MAX_INIMIGOS);
+
+
+            if (teclas[ALLEGRO_KEY_A] && jogador.x > 0) {
+                jogador.x -= VELOCIDADE_BASE * jogador.velocidade;
+            } else if (teclas[ALLEGRO_KEY_D] && jogador.x + TAM_JOGADOR < LARGURA) {
+                jogador.x += VELOCIDADE_BASE * jogador.velocidade;
+            }
+
+            // Atualiza a física dos objetos
             update_jogador(&jogador);
             update_tiros(tiros, MAX_TIROS);
             update_inimigos(inimigos, tiros, &jogador, &zumbis_mortos, MAX_INIMIGOS, MAX_TIROS);
 
-            // Gera novos inimigos periodicamente
             frames_inimigo++;
-            if (frames_inimigo >= 120) { // Gera um inimigo a cada 2 segundos
+            if (frames_inimigo >= 120) {
                 gerar_inimigo(inimigos, MAX_INIMIGOS);
                 frames_inimigo = 0;
             }
-
             redesenhar = true;
         }
 
@@ -318,8 +387,18 @@ int inicia_jogo(ALLEGRO_DISPLAY* disp, ALLEGRO_FONT* font) {
             // Chão verde
             al_draw_filled_rectangle(0, ALTURA - ALTURA_CHAO, LARGURA, ALTURA, al_map_rgb(34, 139, 34));
 
-            // Jogador
-            desenhar_jogador(&jogador);
+            if(jogador.intangivel_timer > 0) {
+                if((frame_conter / 6) % 2 == 0) {
+                    // Desenha o jogador piscando
+                    desenhar_jogador(&jogador);
+                } else {
+                    desenhar_jogador(&jogador);
+                }
+
+            } else {
+                // Desenha o jogador normalmente
+                desenhar_jogador(&jogador);
+            }
 
             // Tiros
             for (int i = 0; i < MAX_TIROS; i++) {
@@ -338,6 +417,10 @@ int inicia_jogo(ALLEGRO_DISPLAY* disp, ALLEGRO_FONT* font) {
                 }
             }
 
+            for (int i = 0; i < jogador.hp; i++) {
+                al_draw_filled_circle(20 + (i * 15), 25, 5, al_map_rgb(255, 0, 0));
+            }
+            
             al_draw_textf(font, al_map_rgb(255, 255, 255), 10, 10, 0, "MORTES: %d", zumbis_mortos);
 
 
