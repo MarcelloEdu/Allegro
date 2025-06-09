@@ -469,6 +469,11 @@ int main()
     ALLEGRO_FONT* font = al_load_ttf_font("font.ttf", 40, 0);
     
     if (!disp || !fundo || !font || !timer || !queue) {
+        if (!disp) fprintf(stderr, "Falha ao criar a janela.\n");
+        if (!fundo) fprintf(stderr, "Falha ao carregar a imagem de fundo.\n");
+        if (!font) fprintf(stderr, "Falha ao carregar a fonte.\n");
+        if (!timer) fprintf(stderr, "Falha ao criar o timer.\n");
+        if (!queue) fprintf(stderr, "Falha ao criar a fila de eventos.\n");
         fprintf(stderr, "Falha ao inicializar Allegro ou carregar recursos.\n");
         return -1;
     }
