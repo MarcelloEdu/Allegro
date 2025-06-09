@@ -467,6 +467,11 @@ int main()
     ALLEGRO_DISPLAY* disp = al_create_display(LARGURA, ALTURA);
     ALLEGRO_BITMAP* fundo = al_load_bitmap("orig_big.png");
     ALLEGRO_FONT* font = al_load_ttf_font("font.ttf", 40, 0);
+    
+    if (!disp || !fundo || !font || !timer || !queue) {
+        fprintf(stderr, "Falha ao inicializar Allegro ou carregar recursos.\n");
+        return -1;
+    }
 
     al_register_event_source(queue, al_get_keyboard_event_source());
     al_register_event_source(queue, al_get_display_event_source(disp));
