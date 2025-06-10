@@ -60,7 +60,7 @@ void tela_game_over(ALLEGRO_FONT* font, int zumbis_mortos) {
     bool sair = false;
     while (!sair) {
         // --- Desenho da Tela ---
-        al_clear_to_color(al_map_rgb(20, 0, 0)); // fundo_mapa vermelho bem escuro
+        al_clear_to_color(al_map_rgb(20, 0, 0)); // fundo_menu vermelho bem escuro
 
         // Texto "GAME OVER"
         al_draw_text(font, al_map_rgb(200, 0, 0), LARGURA / 2, ALTURA / 3, ALLEGRO_ALIGN_CENTER, "GAME OVER");
@@ -154,41 +154,41 @@ void disparar_tiro(Tiro tiros[], float x, float y, int direcao) {
     }
 }
 
-void update_tiros(Tiro tiros[], int max) {
+void update_tiros(Tiro tiros[], int max, float camera_x) {
     for (int i = 0; i < max; i++) {
         if (tiros[i].ativo) {
             tiros[i].x += tiros[i].dx;
-            if (tiros[i].x > LARGURA || tiros[i].x < 0) {
+            if (tiros[i].x > camera_x + LARGURA + 20 || tiros[i].x < camera_x - 20) {
                 tiros[i].ativo = false;
             }
         }
     }
 }
 
-void gerar_inimigo(Inimigo inimigos[], int max) {
+void gerar_inimigo(Inimigo inimigos[], int max, float camera_x) {
     for (int i = 0; i < max; i++) {
         if (!inimigos[i].ativo) {
-            // simulando que estão vindo "de frente" no cenário.
-            inimigos[i].x = LARGURA;
+            // O inimigo aparece na borda direita da CÂMERA, não da tela.
+            inimigos[i].x = camera_x + LARGURA + 10; // Posição no MUNDO
 
-            //posicionando o zumbi no chão.
             inimigos[i].y = ALTURA - ALTURA_CHAO - TAM_INIMIGO;
             inimigos[i].dy = 0;
             inimigos[i].no_chao = true;
-
-            // Cor/vida inicial
+            inimigos[i].ativo = true;
             inimigos[i].r = 0;
             inimigos[i].g = 0;
             inimigos[i].b = 255;
-            inimigos[i].ativo = true;
             break;
         }
     }
 }
 
-void update_inimigos(Inimigo inimigos[], Tiro tiros[], Jogador *jogador, int *zumbis_mortos, int max_inimigos, int max_tiros) {    for (int i = 0; i < max_inimigos; i++) {
+// A assinatura agora recebe a posição da câmera
+// Versão de depuração da função update_inimigos
+void update_inimigos(Inimigo inimigos[], Tiro tiros[], Jogador *jogador, int *zumbis_mortos, int max_inimigos, int max_tiros, float camera_x) {
+    for (int i = 0; i < max_inimigos; i++) {
         if (inimigos[i].ativo) {
-            // --- Lógica de Movimento do Zumbi (sem alteração) ---
+            // Lógica de movimento e desativação (sem alteração)
             if (inimigos[i].x < jogador->x) {
                 inimigos[i].x += VELOCIDADE_ZUMBI;
             } else if (inimigos[i].x > jogador->x) {
@@ -197,7 +197,6 @@ void update_inimigos(Inimigo inimigos[], Tiro tiros[], Jogador *jogador, int *zu
 
             inimigos[i].dy += GRAVIDADE;
             inimigos[i].y += inimigos[i].dy;
-
             float chao_y = ALTURA - ALTURA_CHAO - TAM_INIMIGO;
             if (inimigos[i].y > chao_y) {
                 inimigos[i].y = chao_y;
@@ -207,11 +206,11 @@ void update_inimigos(Inimigo inimigos[], Tiro tiros[], Jogador *jogador, int *zu
                 inimigos[i].no_chao = false;
             }
 
-            if (inimigos[i].x < -TAM_INIMIGO - 20 || inimigos[i].x > LARGURA + 20) {
+            if (inimigos[i].x < camera_x - TAM_INIMIGO - 50) {
                 inimigos[i].ativo = false;
             }
 
-            // --- Lógica de Colisão com Tiros ---
+            // --- Lógica de Colisão com Tiros (com printf para depuração) ---
             for (int j = 0; j < max_tiros; j++) {
                 if (tiros[j].ativo) {
                     float dx = inimigos[i].x - tiros[j].x;
@@ -224,10 +223,9 @@ void update_inimigos(Inimigo inimigos[], Tiro tiros[], Jogador *jogador, int *zu
                         if (inimigos[i].r < 255) inimigos[i].r += 25;
                         if (inimigos[i].g < 255) inimigos[i].g += 25;
 
-                        // Se o inimigo morrer...
                         if (inimigos[i].b <= 0 && inimigos[i].r >= 255 && inimigos[i].g >= 255) {
                             inimigos[i].ativo = false;
-                            (*zumbis_mortos)++; // Mantém apenas o contador de mortes.
+                            (*zumbis_mortos)++;
                         }
                     }
                 }
@@ -264,41 +262,14 @@ void desenhar_jogador(Jogador *jogador) {
         al_map_rgb(255, 128, 0)); // Cor laranja
 }
 
-void desenhar_jogo(float jogador_x, float jogador_y, Tiro tiros[], Inimigo inimigos[]) {
-    al_clear_to_color(al_map_rgb(0, 0, 0));
-
-    al_draw_filled_rectangle(0, ALTURA - ALTURA_CHAO,
-                            LARGURA, ALTURA, 
-                            al_map_rgb(34, 139, 34));  // verde grama
-
-
-    al_draw_filled_rectangle(jogador_x, jogador_y,
-                             jogador_x + TAM_JOGADOR, jogador_y + TAM_JOGADOR,
-                             al_map_rgb(255, 128, 0));
-
-    for (int i = 0; i < MAX_TIROS; i++) {
-        if (tiros[i].ativo) {
-            al_draw_filled_rectangle(tiros[i].x, tiros[i].y,
-                                     tiros[i].x + TAM_TIROS, tiros[i].y + 5,
-                                     al_map_rgb(255, 255, 0));
-        }
-    }
-
-    for (int i = 0; i < MAX_INIMIGOS; i++) {
-        if (inimigos[i].ativo) {
-            ALLEGRO_COLOR cor = al_map_rgb((int)inimigos[i].r, (int)inimigos[i].g, (int)inimigos[i].b);
-            al_draw_filled_circle(inimigos[i].x, inimigos[i].y, TAM_INIMIGO, cor);
-        }
-    }
-
-    al_flip_display();
-}
-
-int inicia_jogo(ALLEGRO_DISPLAY* disp, ALLEGRO_FONT* font) {
+int inicia_jogo(ALLEGRO_DISPLAY* disp, ALLEGRO_FONT* font, ALLEGRO_BITMAP* fundo_jogo) {
     al_init_primitives_addon(); // Necessário para desenhar formas
 
     ALLEGRO_TIMER* timer = al_create_timer(1.0 / 60.0);
     ALLEGRO_EVENT_QUEUE* fila = al_create_event_queue();
+
+    float camera_x = 0;
+    float mundo_largura = al_get_bitmap_width(fundo_jogo);
 
     al_register_event_source(fila, al_get_keyboard_event_source());
     al_register_event_source(fila, al_get_display_event_source(disp));
@@ -329,7 +300,7 @@ int inicia_jogo(ALLEGRO_DISPLAY* disp, ALLEGRO_FONT* font) {
     ALLEGRO_EVENT ev;
     bool rodando = true;
     bool redesenhar = true;
-    int frame_conter = 0;
+    int frame_counter = 0;
 
     al_start_timer(timer);
 
@@ -338,7 +309,7 @@ int inicia_jogo(ALLEGRO_DISPLAY* disp, ALLEGRO_FONT* font) {
 
         // --- LÓGICA DO TIMER (ATUALIZAÇÃO DO ESTADO DO JOGO) ---
         if (ev.type == ALLEGRO_EVENT_TIMER) {
-            frame_conter++;
+            frame_counter++;
 
             if(jogador.hp <= 0) {
                 al_clear_to_color(al_map_rgb(255, 0, 0)); // Tela vermelha se o jogador morrer
@@ -358,18 +329,24 @@ int inicia_jogo(ALLEGRO_DISPLAY* disp, ALLEGRO_FONT* font) {
 
             if (teclas[ALLEGRO_KEY_A] && jogador.x > 0) {
                 jogador.x -= VELOCIDADE_BASE * jogador.velocidade;
-            } else if (teclas[ALLEGRO_KEY_D] && jogador.x + TAM_JOGADOR < LARGURA) {
+            } else if (teclas[ALLEGRO_KEY_D] && jogador.x < mundo_largura - TAM_JOGADOR) {
                 jogador.x += VELOCIDADE_BASE * jogador.velocidade;
+            }
+
+            camera_x = jogador.x - (LARGURA / 2); // Atualiza a posição da câmera com base na posição do jogador
+            if (camera_x < 0) camera_x = 0; // Garante que a câmera não saia do mundo
+            if (camera_x > mundo_largura - LARGURA) {
+                camera_x = mundo_largura - LARGURA; // Garante que a câmera não ultrapasse o mundo
             }
 
             // Atualiza a física dos objetos
             update_jogador(&jogador);
-            update_tiros(tiros, MAX_TIROS);
-            update_inimigos(inimigos, tiros, &jogador, &zumbis_mortos, MAX_INIMIGOS, MAX_TIROS);
+            update_tiros(tiros, MAX_TIROS, camera_x);
+            update_inimigos(inimigos, tiros, &jogador, &zumbis_mortos, MAX_INIMIGOS, MAX_TIROS, camera_x);
 
             frames_inimigo++;
             if (frames_inimigo >= 120) {
-                gerar_inimigo(inimigos, MAX_INIMIGOS);
+                gerar_inimigo(inimigos, MAX_INIMIGOS, camera_x);
                 frames_inimigo = 0;
             }
             redesenhar = true;
@@ -418,66 +395,53 @@ int inicia_jogo(ALLEGRO_DISPLAY* disp, ALLEGRO_FONT* font) {
         }
 
         // --- LÓGICA DE DESENHO ---
-        if (redesenhar && al_is_event_queue_empty(fila)) {
-            al_clear_to_color(al_map_rgb(0, 0, 0));
+            if (redesenhar && al_is_event_queue_empty(fila)) {
+                // 1. Desenha a parte do fundo que a câmera está vendo
+                al_draw_bitmap_region(fundo_jogo, camera_x, 0, LARGURA, ALTURA, 0, 0, 0);
 
-            // Chão verde
-            al_draw_filled_rectangle(0, ALTURA - ALTURA_CHAO, LARGURA, ALTURA, al_map_rgb(34, 139, 34));
-
-            if(jogador.intangivel_timer > 0) {
-                if((frame_conter / 6) % 2 == 0) {
-                    // Desenha o jogador piscando
-                    desenhar_jogador(&jogador);
-                } else {
-                    desenhar_jogador(&jogador);
+                // 2. Desenha o jogador na posição correta da tela (posição no mundo - posição da câmera)
+                if (!(jogador.intangivel_timer > 0 && (frame_counter / 6) % 2)) {
+                    // Note o "jogador.x - camera_x"
+                    al_draw_filled_rectangle(jogador.x - camera_x, jogador.y,
+                                            jogador.x - camera_x + TAM_JOGADOR, jogador.y + TAM_JOGADOR,
+                                            al_map_rgb(255, 140, 0));
+                }
+                
+                // 3. Desenha os inimigos na posição relativa à câmera
+                for (int i = 0; i < MAX_INIMIGOS; i++) {
+                    if (inimigos[i].ativo) {
+                        ALLEGRO_COLOR cor = al_map_rgb((int)inimigos[i].r, (int)inimigos[i].g, (int)inimigos[i].b);
+                        // Note o "inimigos[i].x - camera_x"
+                        al_draw_filled_circle(inimigos[i].x - camera_x, inimigos[i].y, TAM_INIMIGO, cor);
+                    }
                 }
 
-            } else {
-                // Desenha o jogador normalmente
-                desenhar_jogador(&jogador);
-            }
-
-            // Tiros
-            for (int i = 0; i < MAX_TIROS; i++) {
-                if (tiros[i].ativo) {
-                    al_draw_filled_rectangle(tiros[i].x, tiros[i].y,
-                                             tiros[i].x + TAM_TIROS, tiros[i].y + 5,
-                                             al_map_rgb(255, 255, 0));
+                // 4. Desenha os tiros na posição relativa à câmera
+                for (int i = 0; i < MAX_TIROS; i++) {
+                    if (tiros[i].ativo) {
+                        // Note o "tiros[i].x - camera_x"
+                        al_draw_filled_rectangle(tiros[i].x - camera_x, tiros[i].y,
+                                                tiros[i].x - camera_x + TAM_TIROS, tiros[i].y + 5,
+                                                al_map_rgb(255, 255, 0));
+                    }
                 }
-            }
 
-            // Inimigos
-            for (int i = 0; i < MAX_INIMIGOS; i++) {
-                if (inimigos[i].ativo) {
-                    ALLEGRO_COLOR cor = al_map_rgb((int)inimigos[i].r, (int)inimigos[i].g, (int)inimigos[i].b);
-                    al_draw_filled_circle(inimigos[i].x, inimigos[i].y, TAM_INIMIGO, cor);
+                // 5. Desenha a UI (corações, etc.), que NÃO é afetada pela câmera
+                for (int i = 0; i < jogador.hp; i++) {
+                    al_draw_filled_circle(20 + (i * 15), 25, 5, al_map_rgb(255, 0, 0));
                 }
-            }
+                for (int i = 0; i < zumbis_mortos; i++) {
+                    al_draw_filled_circle(LARGURA - 15 - (i * 15), 25, 5, al_map_rgb(255, 255, 255));
+                }
 
-            for (int i = 0; i < jogador.hp; i++) {
-                al_draw_filled_circle(20 + (i * 15), 25, 5, al_map_rgb(255, 0, 0));
-            }
-            
-            al_draw_textf(font, al_map_rgb(255, 255, 255), 10, 10, 0, "MORTES: %d", zumbis_mortos);
+                //se o jogador morreir, desenha a tela de game over
+                if (jogador.hp <= 0) {
+                    tela_game_over(font, zumbis_mortos);
+                    rodando = false; // Encerra o jogo se o jogador morrer
+                }
 
-
-            // Contador de zumbis mortos (bolinhas brancas)
-            for (int i = 0; i < zumbis_mortos; i++) {
-                al_draw_filled_circle(LARGURA - 15 - (i * 15), 25, 5, al_map_rgb(255, 255, 255));
-            }
-
-            // Se o jogador estiver sem vida, chama a tela de Game Over e encerra o jogo
-            if (jogador.hp <= 0) {
-                // Adormece por um instante para o jogador ver o que aconteceu
-                al_rest(0.5); 
-                // Chama a nova tela
-                tela_game_over(font, zumbis_mortos);
-                // Sai do loop do jogo
-                rodando = false;
-            }
-
-            al_flip_display();
-            redesenhar = false;
+                al_flip_display();
+                redesenhar = false;
         }
     }
 
@@ -512,12 +476,13 @@ int main()
     ALLEGRO_TIMER* timer = al_create_timer(1.0 / 30.0);
     ALLEGRO_EVENT_QUEUE* queue = al_create_event_queue();
     ALLEGRO_DISPLAY* disp = al_create_display(LARGURA, ALTURA);
-    ALLEGRO_BITMAP* fundo_mapa = al_load_bitmap("orig_big.png");
+    ALLEGRO_BITMAP* fundo_menu = al_load_bitmap("orig_big.png");
+    ALLEGRO_BITMAP* fundo_jogo = al_load_bitmap("fundo.png");
     ALLEGRO_FONT* font = al_load_ttf_font("font.ttf", 40, 0);
     
-    if (!disp || !fundo_mapa || !font || !timer || !queue) {
+    if (!disp || !fundo_menu || !font || !timer || !queue) {
         if (!disp) fprintf(stderr, "Falha ao criar a janela.\n");
-        if (!fundo_mapa) fprintf(stderr, "Falha ao carregar a imagem de fundo_mapa.\n");
+        if (!fundo_menu) fprintf(stderr, "Falha ao carregar a imagem de fundo_menu.\n");
         if (!font) fprintf(stderr, "Falha ao carregar a fonte.\n");
         if (!timer) fprintf(stderr, "Falha ao criar o timer.\n");
         if (!queue) fprintf(stderr, "Falha ao criar a fila de eventos.\n");
@@ -550,7 +515,7 @@ int main()
                 opcao_selecionada = (opcao_selecionada + 1) % OPCOES;
             } else if (event.keyboard.keycode == ALLEGRO_KEY_ENTER) {
                 if (opcao_selecionada == 0) {
-                    inicia_jogo(disp, font);
+                    inicia_jogo(disp, font, fundo_jogo);
                 } else if (opcao_selecionada == 1) {
                     inicia_configuracoes(disp);
                 } else if (opcao_selecionada == 2) {
@@ -560,7 +525,7 @@ int main()
         }
 
         else if (event.type == ALLEGRO_EVENT_TIMER) {
-            al_draw_bitmap(fundo_mapa, 0, 0, 0);
+            al_draw_bitmap(fundo_menu, 0, 0, 0);
 
             for (int i = 0; i < OPCOES; i++) {
                 ALLEGRO_COLOR cor = (i == opcao_selecionada) ? al_map_rgb(255, 0, 0) : al_map_rgb(0, 0, 0);
@@ -572,7 +537,7 @@ int main()
     }
 
     al_destroy_font(font);
-    al_destroy_bitmap(fundo_mapa);
+    al_destroy_bitmap(fundo_menu);
     al_destroy_timer(timer);
     al_destroy_event_queue(queue);
     al_destroy_display(disp);
