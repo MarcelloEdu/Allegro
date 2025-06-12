@@ -41,6 +41,7 @@ typedef struct {
 typedef struct {
     float x, y;
     float dx;
+    float dy;
     bool ativo;
 } Tiro;
 
@@ -142,12 +143,13 @@ void aplicar_dano_jogador(Jogador *jogador, Inimigo inimigos[], int max_inimigos
     }
 }
 
-void disparar_tiro(Tiro tiros[], float x, float y, int direcao) {
+void disparar_tiro(Tiro tiros[], float x, float y, float dx, float dy) {
     for (int i = 0; i < MAX_TIROS; i++) {
         if (!tiros[i].ativo) {
             tiros[i].x = x;
             tiros[i].y = y;
-            tiros[i].dx = 10 * direcao;
+            tiros[i].dx = dx;
+            tiros[i].dy = dy;
             tiros[i].ativo = true;
             break;
         }
@@ -158,12 +160,15 @@ void update_tiros(Tiro tiros[], int max, float camera_x) {
     for (int i = 0; i < max; i++) {
         if (tiros[i].ativo) {
             tiros[i].x += tiros[i].dx;
-            if (tiros[i].x > camera_x + LARGURA + 20 || tiros[i].x < camera_x - 20) {
-                tiros[i].ativo = false;
+            tiros[i].y += tiros[i].dy;
+            if (tiros[i].x > camera_x + LARGURA + 20 || tiros[i].x < camera_x - 20 ||
+                tiros[i].y < -20 || tiros[i].y > ALTURA + 20) {
+                    tiros[i].ativo = false; // Desativa o tiro se sair da tela
+                }
             }
         }
     }
-}
+
 
 void gerar_inimigo(Inimigo inimigos[], int max, float camera_x) {
     for (int i = 0; i < max; i++) {
@@ -183,8 +188,6 @@ void gerar_inimigo(Inimigo inimigos[], int max, float camera_x) {
     }
 }
 
-// A assinatura agora recebe a posição da câmera
-// Versão de depuração da função update_inimigos
 void update_inimigos(Inimigo inimigos[], Tiro tiros[], Jogador *jogador, int *zumbis_mortos, int max_inimigos, int max_tiros, float camera_x) {
     for (int i = 0; i < max_inimigos; i++) {
         if (inimigos[i].ativo) {
@@ -262,40 +265,27 @@ void desenhar_jogador(Jogador *jogador) {
         al_map_rgb(255, 128, 0)); // Cor laranja
 }
 
-int inicia_jogo(ALLEGRO_DISPLAY* disp, ALLEGRO_FONT* font, ALLEGRO_BITMAP* fundo_jogo) {
-    al_init_primitives_addon(); // Necessário para desenhar formas
-
+int inicia_jogo(ALLEGRO_DISPLAY* disp, ALLEGRO_FONT* font, ALLEGRO_BITMAP* fundo) {
+    al_init_primitives_addon();
     ALLEGRO_TIMER* timer = al_create_timer(1.0 / 60.0);
     ALLEGRO_EVENT_QUEUE* fila = al_create_event_queue();
 
     float camera_x = 0;
-    float mundo_largura = al_get_bitmap_width(fundo_jogo);
+    float mundo_largura = al_get_bitmap_width(fundo);
 
     al_register_event_source(fila, al_get_keyboard_event_source());
     al_register_event_source(fila, al_get_display_event_source(disp));
     al_register_event_source(fila, al_get_timer_event_source(timer));
 
-    // Inicializa jogador com o campo 'direcao'
     Jogador jogador = {
-        .x = LARGURA / 2,
-        .y = ALTURA - ALTURA_CHAO - TAM_JOGADOR,
-        .dy = 0,
-        .no_chao = true,
-        .direcao = 1, // Começa virado para a direita
-        .hp = 8, // Vida inicial do jogador
-        .velocidade = 1.0, // Velocidade inicial do jogador
-        .intangivel_timer = 0 // Jogador começa tangível
+        .x = LARGURA / 2, .y = ALTURA - ALTURA_CHAO - TAM_JOGADOR, .dy = 0,
+        .no_chao = true, .direcao = 1, .hp = 8, .velocidade = 2.0, .intangivel_timer = 0
     };
 
-    // Inicializa arrays de tiros e inimigos
     Tiro tiros[MAX_TIROS] = {0};
     Inimigo inimigos[MAX_INIMIGOS] = {0};
     int frames_inimigo = 0;
-
-    // Variável para o contador de mortes
     int zumbis_mortos = 0;
-
-    // Controles do jogo
     bool teclas[ALLEGRO_KEY_MAX] = {false};
     ALLEGRO_EVENT ev;
     bool rodando = true;
@@ -307,39 +297,33 @@ int inicia_jogo(ALLEGRO_DISPLAY* disp, ALLEGRO_FONT* font, ALLEGRO_BITMAP* fundo
     while (rodando) {
         al_wait_for_event(fila, &ev);
 
-        // --- LÓGICA DO TIMER (ATUALIZAÇÃO DO ESTADO DO JOGO) ---
         if (ev.type == ALLEGRO_EVENT_TIMER) {
             frame_counter++;
 
-            if(jogador.hp <= 0) {
-                al_clear_to_color(al_map_rgb(255, 0, 0)); // Tela vermelha se o jogador morrer
-                al_draw_text(font, al_map_rgb(255, 255, 255), LARGURA / 2, ALTURA / 2, ALLEGRO_ALIGN_CENTER, "GAME OVER");
-                al_flip_display();
-                rodando = false; // Encerra o jogo se o jogador morrer
+            //verifica se o jogador morreu
+            if (jogador.hp <= 0) {
+                al_rest(0.5);
+                tela_game_over(font, zumbis_mortos);
+                rodando = false;
             }
 
-            // Decrementa o timer de intangibilidade
-            if (jogador.intangivel_timer > 0) {
-                jogador.intangivel_timer--;
-            }
-
-            // Verifica colisão e aplica dano
+            if (jogador.intangivel_timer > 0) jogador.intangivel_timer--;
+            
             aplicar_dano_jogador(&jogador, inimigos, MAX_INIMIGOS);
 
-
-            if (teclas[ALLEGRO_KEY_A] && jogador.x > 0) {
+            if (teclas[ALLEGRO_KEY_A] && jogador.x > 0) 
+            {
                 jogador.x -= VELOCIDADE_BASE * jogador.velocidade;
-            } else if (teclas[ALLEGRO_KEY_D] && jogador.x < mundo_largura - TAM_JOGADOR) {
+            } 
+            else if (teclas[ALLEGRO_KEY_D] && jogador.x < mundo_largura - TAM_JOGADOR) 
+            {
                 jogador.x += VELOCIDADE_BASE * jogador.velocidade;
             }
 
-            camera_x = jogador.x - (LARGURA / 2); // Atualiza a posição da câmera com base na posição do jogador
-            if (camera_x < 0) camera_x = 0; // Garante que a câmera não saia do mundo
-            if (camera_x > mundo_largura - LARGURA) {
-                camera_x = mundo_largura - LARGURA; // Garante que a câmera não ultrapasse o mundo
-            }
+            camera_x = jogador.x - LARGURA / 2.0;
+            if (camera_x < 0) camera_x = 0;
+            if (camera_x > mundo_largura - LARGURA) camera_x = mundo_largura - LARGURA;
 
-            // Atualiza a física dos objetos
             update_jogador(&jogador);
             update_tiros(tiros, MAX_TIROS, camera_x);
             update_inimigos(inimigos, tiros, &jogador, &zumbis_mortos, MAX_INIMIGOS, MAX_TIROS, camera_x);
@@ -351,100 +335,85 @@ int inicia_jogo(ALLEGRO_DISPLAY* disp, ALLEGRO_FONT* font, ALLEGRO_BITMAP* fundo
             }
             redesenhar = true;
         }
-
-        // --- LÓGICA DE EVENTOS DE ENTRADA (INPUT) ---
         else if (ev.type == ALLEGRO_EVENT_DISPLAY_CLOSE) {
             rodando = false;
         }
         else if (ev.type == ALLEGRO_EVENT_KEY_DOWN) {
             teclas[ev.keyboard.keycode] = true;
+            if (ev.keyboard.keycode == ALLEGRO_KEY_A) jogador.direcao = -1;
+            else if (ev.keyboard.keycode == ALLEGRO_KEY_D) jogador.direcao = 1;
 
-            // Atualiza a direção imediatamente ao pressionar a tecla
-            if (ev.keyboard.keycode == ALLEGRO_KEY_A) {
-                jogador.direcao = -1;
-            } else if (ev.keyboard.keycode == ALLEGRO_KEY_D) {
-                jogador.direcao = 1;
-            }
-
-            // Ações de pressionar (pulo, tiro, sair)
-            if (ev.keyboard.keycode == ALLEGRO_KEY_ESCAPE)
-                rodando = false;
-
-            if (ev.keyboard.keycode == ALLEGRO_KEY_W)
-                pular(&jogador);
+            if (ev.keyboard.keycode == ALLEGRO_KEY_ESCAPE) rodando = false;
+            if (ev.keyboard.keycode == ALLEGRO_KEY_W) pular(&jogador);
 
             if (ev.keyboard.keycode == ALLEGRO_KEY_SPACE) {
-                float tiro_x;
-                if (jogador.direcao == 1) { // Direita
-                    tiro_x = jogador.x + TAM_JOGADOR;
-                } else { // Esquerda
-                    tiro_x = jogador.x - TAM_TIROS;
+                const float VELOCIDADE_TIRO = 10.0;
+                float dir_x = 0, dir_y = 0;
+
+                if (teclas[ALLEGRO_KEY_W]) dir_y -= 1;
+                if (teclas[ALLEGRO_KEY_S]) dir_y += 1;
+                if (teclas[ALLEGRO_KEY_A]) dir_x -= 1;
+                if (teclas[ALLEGRO_KEY_D]) dir_x += 1;
+
+                if (dir_x == 0 && dir_y == 0) dir_x = jogador.direcao;
+
+                // Normaliza a direção do tiro
+                float magnitude = sqrt(dir_x * dir_x + dir_y * dir_y);
+                float vel_x = 0, vel_y = 0;
+
+                if (magnitude > 0) {
+                    vel_x = (dir_x / magnitude) * VELOCIDADE_TIRO;
+                    vel_y = (dir_y / magnitude) * VELOCIDADE_TIRO;
                 }
-                disparar_tiro(tiros, tiro_x, jogador.y + (TAM_JOGADOR / 2) - (TAM_TIROS / 2), jogador.direcao);
+                
+                float tiro_x = jogador.x + TAM_JOGADOR / 2.0;
+                float tiro_y = jogador.y + TAM_JOGADOR / 2.0;
+
+                disparar_tiro(tiros, tiro_x, tiro_y, vel_x, vel_y);
             }
         }
         else if (ev.type == ALLEGRO_EVENT_KEY_UP) {
             teclas[ev.keyboard.keycode] = false;
-
-            // Atualiza a direção se uma tecla for solta e a outra continuar pressionada
-            if (ev.keyboard.keycode == ALLEGRO_KEY_A && teclas[ALLEGRO_KEY_D]) {
-                jogador.direcao = 1;
-            } else if (ev.keyboard.keycode == ALLEGRO_KEY_D && teclas[ALLEGRO_KEY_A]) {
-                jogador.direcao = -1;
-            }
+            if (ev.keyboard.keycode == ALLEGRO_KEY_A && teclas[ALLEGRO_KEY_D]) jogador.direcao = 1;
+            else if (ev.keyboard.keycode == ALLEGRO_KEY_D && teclas[ALLEGRO_KEY_A]) jogador.direcao = -1;
         }
 
-        // --- LÓGICA DE DESENHO ---
-            if (redesenhar && al_is_event_queue_empty(fila)) {
-                // 1. Desenha a parte do fundo que a câmera está vendo
-                al_draw_bitmap_region(fundo_jogo, camera_x, 0, LARGURA, ALTURA, 0, 0, 0);
+        if (redesenhar && al_is_event_queue_empty(fila)) {
+            al_draw_bitmap_region(fundo, camera_x, 0, LARGURA, ALTURA, 0, 0, 0);
 
-                // 2. Desenha o jogador na posição correta da tela (posição no mundo - posição da câmera)
-                if (!(jogador.intangivel_timer > 0 && (frame_counter / 6) % 2)) {
-                    // Note o "jogador.x - camera_x"
-                    al_draw_filled_rectangle(jogador.x - camera_x, jogador.y,
-                                            jogador.x - camera_x + TAM_JOGADOR, jogador.y + TAM_JOGADOR,
-                                            al_map_rgb(255, 140, 0));
+            if (!(jogador.intangivel_timer > 0 && (frame_counter / 6) % 2)) {
+                 al_draw_filled_rectangle(jogador.x - camera_x, jogador.y,
+                                          jogador.x - camera_x + TAM_JOGADOR, jogador.y + TAM_JOGADOR,
+                                          al_map_rgb(255, 140, 0));
+            }
+            
+            for (int i = 0; i < MAX_INIMIGOS; i++) {
+                if (inimigos[i].ativo) {
+                    ALLEGRO_COLOR cor = al_map_rgb((int)inimigos[i].r, (int)inimigos[i].g, (int)inimigos[i].b);
+                    al_draw_filled_circle(inimigos[i].x - camera_x, inimigos[i].y, TAM_INIMIGO, cor);
                 }
-                
-                // 3. Desenha os inimigos na posição relativa à câmera
-                for (int i = 0; i < MAX_INIMIGOS; i++) {
-                    if (inimigos[i].ativo) {
-                        ALLEGRO_COLOR cor = al_map_rgb((int)inimigos[i].r, (int)inimigos[i].g, (int)inimigos[i].b);
-                        // Note o "inimigos[i].x - camera_x"
-                        al_draw_filled_circle(inimigos[i].x - camera_x, inimigos[i].y, TAM_INIMIGO, cor);
-                    }
-                }
+            }
 
-                // 4. Desenha os tiros na posição relativa à câmera
-                for (int i = 0; i < MAX_TIROS; i++) {
-                    if (tiros[i].ativo) {
-                        // Note o "tiros[i].x - camera_x"
-                        al_draw_filled_rectangle(tiros[i].x - camera_x, tiros[i].y,
-                                                tiros[i].x - camera_x + TAM_TIROS, tiros[i].y + 5,
-                                                al_map_rgb(255, 255, 0));
-                    }
+            for (int i = 0; i < MAX_TIROS; i++) {
+                if (tiros[i].ativo) {
+                    al_draw_filled_rectangle(tiros[i].x - camera_x, tiros[i].y,
+                                             tiros[i].x - camera_x + TAM_TIROS, tiros[i].y + 5,
+                                             al_map_rgb(255, 255, 0));
                 }
+            }
 
-                // 5. Desenha a UI (corações, etc.), que NÃO é afetada pela câmera
-                for (int i = 0; i < jogador.hp; i++) {
-                    al_draw_filled_circle(20 + (i * 15), 25, 5, al_map_rgb(255, 0, 0));
-                }
-                for (int i = 0; i < zumbis_mortos; i++) {
-                    al_draw_filled_circle(LARGURA - 15 - (i * 15), 25, 5, al_map_rgb(255, 255, 255));
-                }
+            for (int i = 0; i < jogador.hp; i++) {
+                al_draw_filled_circle(20 + (i * 15), 25, 5, al_map_rgb(255, 0, 0));
+            }
+            for (int i = 0; i < zumbis_mortos; i++) {
+                al_draw_filled_circle(LARGURA - 15 - (i * 15), 25, 5, al_map_rgb(255, 255, 255));
+            }
 
-                //se o jogador morreir, desenha a tela de game over
-                if (jogador.hp <= 0) {
-                    tela_game_over(font, zumbis_mortos);
-                    rodando = false; // Encerra o jogo se o jogador morrer
-                }
-
-                al_flip_display();
-                redesenhar = false;
+            al_flip_display();
+            redesenhar = false;
         }
     }
-
+    
     al_destroy_timer(timer);
     al_destroy_event_queue(fila);
     return 0;
