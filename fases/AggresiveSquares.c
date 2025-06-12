@@ -17,6 +17,7 @@
 #define ALTURA_CHAO 150
 #define MAX_TIROS 100
 #define MAX_INIMIGOS 50
+#define MAX_CUSPES 50
 #define TAM_JOGADOR 30
 #define TAM_TIROS 10
 #define TAM_INIMIGO 20
@@ -26,6 +27,8 @@
 
 #define GRAVIDADE 0.5
 #define PULO_FORCA -10.0
+
+
 
 typedef struct {
     float x, y;
@@ -48,9 +51,25 @@ typedef struct {
 typedef struct {
     float x, y;
     float dx, dy;
-    float r, g, b; //vai ser uma representação do HP 
+    bool ativo;
+} Cuspe;
+
+
+typedef enum {
+    ZUMBI_ANDARILHO,
+    ZUMBI_CUSPIDOR
+} TipoInimigo;
+
+typedef struct {
+    float x, y;
+    float dx, dy;
     bool ativo;
     bool no_chao;
+
+    TipoInimigo tipo;       // Identifica o tipo de zumbi
+    int hp;                 // Pontos de vida atuais
+    int hp_max;             // Pontos de vida máximos
+    int timer_ataque;       // Cooldown para o próximo ataque
 } Inimigo;
 
 void tela_game_over(ALLEGRO_FONT* font, int zumbis_mortos) {
@@ -143,6 +162,48 @@ void aplicar_dano_jogador(Jogador *jogador, Inimigo inimigos[], int max_inimigos
     }
 }
 
+void disparar_cuspe(Cuspe cuspes[], float x, float y, float alvo_x) {
+    for (int i = 0; i < MAX_CUSPES; i++) {
+        if (!cuspes[i].ativo) {
+            cuspes[i].x = x;
+            cuspes[i].y = y;
+            cuspes[i].ativo = true;
+
+            // Lógica da Parábola:
+            // 1. Calcula a distância horizontal até o jogador
+            float dist_x = alvo_x - x;
+
+            // 2. Define uma velocidade horizontal na direção do jogador
+            // O tempo para atingir o alvo é dist_x / vel_x. Vamos definir uma vel_x.
+            float vel_x = (dist_x > 0) ? 4.0 : -4.0;
+            if (dist_x < 1) vel_x = 0; // Evita divisão por zero
+            
+            // 3. Define uma velocidade vertical inicial para cima
+            float vel_y = -8.0; // Pulo inicial do cuspe
+
+            cuspes[i].dx = vel_x;
+            cuspes[i].dy = vel_y;
+            break;
+        }
+    }
+}
+
+void update_cuspes(Cuspe cuspes[], int max, float camera_x) {
+    for (int i = 0; i < max; i++) {
+        if (cuspes[i].ativo) {
+            // Aplica gravidade para criar o efeito de parábola
+            cuspes[i].dy += GRAVIDADE * 0.8; // Um pouco menos de gravidade que o jogador
+            cuspes[i].x += cuspes[i].dx;
+            cuspes[i].y += cuspes[i].dy;
+
+            // Desativa se sair da tela
+            if (cuspes[i].x < camera_x - 20 || cuspes[i].x > camera_x + LARGURA + 20 || cuspes[i].y > ALTURA) {
+                cuspes[i].ativo = false;
+            }
+        }
+    }
+}
+
 void disparar_tiro(Tiro tiros[], float x, float y, float dx, float dy) {
     for (int i = 0; i < MAX_TIROS; i++) {
         if (!tiros[i].ativo) {
@@ -169,35 +230,63 @@ void update_tiros(Tiro tiros[], int max, float camera_x) {
         }
     }
 
-
 void gerar_inimigo(Inimigo inimigos[], int max, float camera_x) {
     for (int i = 0; i < max; i++) {
         if (!inimigos[i].ativo) {
-            // O inimigo aparece na borda direita da CÂMERA, não da tela.
-            inimigos[i].x = camera_x + LARGURA + 10; // Posição no MUNDO
 
+            // Escolhe um tipo de inimigo aleatoriamente
+            if(rand() % 2 == 0){
+                inimigos[i].tipo = ZUMBI_ANDARILHO;
+                inimigos[i].hp_max = 100;
+                inimigos[i].hp = 100;
+            }else {
+                inimigos[i].tipo = ZUMBI_CUSPIDOR;
+                inimigos[i].hp_max = 200;
+                inimigos[i].hp = 200;
+            }
+
+            inimigos[i].x = camera_x + LARGURA + (rand() % 100);
             inimigos[i].y = ALTURA - ALTURA_CHAO - TAM_INIMIGO;
             inimigos[i].dy = 0;
+            inimigos[i].dx = 0;
             inimigos[i].no_chao = true;
             inimigos[i].ativo = true;
-            inimigos[i].r = 0;
-            inimigos[i].g = 0;
-            inimigos[i].b = 255;
+            inimigos[i].timer_ataque = 60 + (rand() % 120); // Cooldown inicial de 1 a 3 segundos
             break;
         }
     }
 }
 
-void update_inimigos(Inimigo inimigos[], Tiro tiros[], Jogador *jogador, int *zumbis_mortos, int max_inimigos, int max_tiros, float camera_x) {
-    for (int i = 0; i < max_inimigos; i++) {
+int dist(float x1, float y1, float x2, float y2) {
+    return (int)sqrt((x2 - x1) * (x2 - x1) + (y2 - y1) * (y2 - y1));
+}
+
+void update_inimigos(Inimigo inimigos[], Tiro tiros[], Cuspe cuspes[], Jogador *jogador, int *zumbis_mortos, float camera_x) {
+    for (int i = 0; i < MAX_INIMIGOS; i++) {
         if (inimigos[i].ativo) {
-            // Lógica de movimento e desativação (sem alteração)
-            if (inimigos[i].x < jogador->x) {
-                inimigos[i].x += VELOCIDADE_ZUMBI;
-            } else if (inimigos[i].x > jogador->x) {
-                inimigos[i].x -= VELOCIDADE_ZUMBI;
+            // --- Lógica de IA baseada no tipo de inimigo ---
+            switch (inimigos[i].tipo) {
+                case ZUMBI_ANDARILHO:
+                    // Persegue o jogador
+                    if (inimigos[i].x < jogador->x) inimigos[i].x += VELOCIDADE_ZUMBI;
+                    else if (inimigos[i].x > jogador->x) inimigos[i].x -= VELOCIDADE_ZUMBI;
+                    break;
+
+                case ZUMBI_CUSPIDOR:
+                    // Fica parado e ataca à distância
+                    if (inimigos[i].timer_ataque > 0) {
+                        inimigos[i].timer_ataque--;
+                    } else {
+                        // Se o jogador estiver na frente e a uma distância razoável
+                        if (fabs(jogador->x - inimigos[i].x) < LARGURA / 2) {
+                            disparar_cuspe(cuspes, inimigos[i].x, inimigos[i].y, jogador->x);
+                            inimigos[i].timer_ataque = 180; // Cooldown de 3 segundos
+                        }
+                    }
+                    break;
             }
 
+            // Física e Desativação (comum a todos)
             inimigos[i].dy += GRAVIDADE;
             inimigos[i].y += inimigos[i].dy;
             float chao_y = ALTURA - ALTURA_CHAO - TAM_INIMIGO;
@@ -205,31 +294,17 @@ void update_inimigos(Inimigo inimigos[], Tiro tiros[], Jogador *jogador, int *zu
                 inimigos[i].y = chao_y;
                 inimigos[i].no_chao = true;
                 inimigos[i].dy = 0;
-            } else {
-                inimigos[i].no_chao = false;
             }
+            if (inimigos[i].x < camera_x - TAM_INIMIGO - 50) inimigos[i].ativo = false;
 
-            if (inimigos[i].x < camera_x - TAM_INIMIGO - 50) {
-                inimigos[i].ativo = false;
-            }
-
-            // --- Lógica de Colisão com Tiros (com printf para depuração) ---
-            for (int j = 0; j < max_tiros; j++) {
-                if (tiros[j].ativo) {
-                    float dx = inimigos[i].x - tiros[j].x;
-                    float dy = inimigos[i].y - tiros[j].y;
-                    float dist = sqrt(dx * dx + dy * dy);
-
-                    if (dist < TAM_INIMIGO) {
-                        tiros[j].ativo = false;
-                        if (inimigos[i].b > 0) inimigos[i].b -= 50;
-                        if (inimigos[i].r < 255) inimigos[i].r += 25;
-                        if (inimigos[i].g < 255) inimigos[i].g += 25;
-
-                        if (inimigos[i].b <= 0 && inimigos[i].r >= 255 && inimigos[i].g >= 255) {
-                            inimigos[i].ativo = false;
-                            (*zumbis_mortos)++;
-                        }
+            // Dano dos tiros do JOGADOR no inimigo
+            for (int j = 0; j < MAX_TIROS; j++) {
+                if (tiros[j].ativo && (dist(tiros[j].x, tiros[j].y, inimigos[i].x, inimigos[i].y) < TAM_INIMIGO)) {
+                    tiros[j].ativo = false;
+                    inimigos[i].hp -= 20; // Dano do tiro do jogador
+                    if (inimigos[i].hp <= 0) {
+                        inimigos[i].ativo = false;
+                        (*zumbis_mortos)++;
                     }
                 }
             }
@@ -284,6 +359,7 @@ int inicia_jogo(ALLEGRO_DISPLAY* disp, ALLEGRO_FONT* font, ALLEGRO_BITMAP* fundo
 
     Tiro tiros[MAX_TIROS] = {0};
     Inimigo inimigos[MAX_INIMIGOS] = {0};
+    Cuspe cuspes[MAX_CUSPES] = {0};
     int frames_inimigo = 0;
     int zumbis_mortos = 0;
     bool teclas[ALLEGRO_KEY_MAX] = {false};
@@ -326,7 +402,8 @@ int inicia_jogo(ALLEGRO_DISPLAY* disp, ALLEGRO_FONT* font, ALLEGRO_BITMAP* fundo
 
             update_jogador(&jogador);
             update_tiros(tiros, MAX_TIROS, camera_x);
-            update_inimigos(inimigos, tiros, &jogador, &zumbis_mortos, MAX_INIMIGOS, MAX_TIROS, camera_x);
+            update_cuspes(cuspes, MAX_CUSPES, camera_x);
+            update_inimigos(inimigos, tiros, cuspes, &jogador, &zumbis_mortos, camera_x);
 
             frames_inimigo++;
             if (frames_inimigo >= 120) {
@@ -389,7 +466,16 @@ int inicia_jogo(ALLEGRO_DISPLAY* disp, ALLEGRO_FONT* font, ALLEGRO_BITMAP* fundo
             
             for (int i = 0; i < MAX_INIMIGOS; i++) {
                 if (inimigos[i].ativo) {
-                    ALLEGRO_COLOR cor = al_map_rgb((int)inimigos[i].r, (int)inimigos[i].g, (int)inimigos[i].b);
+                    ALLEGRO_COLOR cor;
+                    if (inimigos[i].tipo == ZUMBI_ANDARILHO) {
+                        cor = al_map_rgb(0, 0, 255); // Azul
+                    } else {
+                        cor = al_map_rgb(0, 255, 0); // Verde
+                    }
+
+                    float brilho = (float)inimigos[i].hp / inimigos[i].hp_max;
+                    cor = al_map_rgb(0, 255 * brilho, 0); // Exemplo para o cuspidor
+
                     al_draw_filled_circle(inimigos[i].x - camera_x, inimigos[i].y, TAM_INIMIGO, cor);
                 }
             }
@@ -399,6 +485,12 @@ int inicia_jogo(ALLEGRO_DISPLAY* disp, ALLEGRO_FONT* font, ALLEGRO_BITMAP* fundo
                     al_draw_filled_rectangle(tiros[i].x - camera_x, tiros[i].y,
                                              tiros[i].x - camera_x + TAM_TIROS, tiros[i].y + 5,
                                              al_map_rgb(255, 255, 0));
+                }
+            }
+
+            for (int i = 0; i < MAX_CUSPES; i++) {
+                if (cuspes[i].ativo) {
+                    al_draw_filled_circle(cuspes[i].x - camera_x, cuspes[i].y, 7, al_map_rgb(0, 255, 0));
                 }
             }
 
