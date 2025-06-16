@@ -162,27 +162,30 @@ void aplicar_dano_jogador(Jogador *jogador, Inimigo inimigos[], int max_inimigos
     }
 }
 
-void disparar_cuspe(Cuspe cuspes[], float x, float y, float alvo_x) {
+void disparar_cuspe(Cuspe cuspes[], float x, float y, float alvo_x, float alvo_y) {
     for (int i = 0; i < MAX_CUSPES; i++) {
         if (!cuspes[i].ativo) {
+            cuspes[i].ativo = true;
             cuspes[i].x = x;
             cuspes[i].y = y;
-            cuspes[i].ativo = true;
 
-            // Lógica da Parábola:
-            // 1. Calcula a distância horizontal até o jogador
             float dist_x = alvo_x - x;
+            float dist_y = alvo_y - y;
 
-            // 2. Define uma velocidade horizontal na direção do jogador
-            // O tempo para atingir o alvo é dist_x / vel_x. Vamos definir uma vel_x.
-            float vel_x = (dist_x > 0) ? 4.0 : -4.0;
-            if (dist_x < 1) vel_x = 0; // Evita divisão por zero
-            
-            // 3. Define uma velocidade vertical inicial para cima
-            float vel_y = -8.0; // Pulo inicial do cuspe
+            // Define quanto tempo (em segundos) o projétil levará para atingir o alvo
+            const float tempo_de_voo_segundos = 1.2f;
+            const float tempo_de_voo_frames = tempo_de_voo_segundos * 60.0f; // Converte para frames
 
-            cuspes[i].dx = vel_x;
-            cuspes[i].dy = vel_y;
+            // Gravidade que afeta o cuspe (um pouco mais fraca que a do jogador)
+            const float G_CUSPE = GRAVIDADE * 0.8f;
+
+            // Calcula a velocidade horizontal necessária
+            cuspes[i].dx = dist_x / tempo_de_voo_frames;
+
+            // Calcula a velocidade vertical inicial necessária para compensar a gravidade
+            // e atingir a altura do jogador no tempo certo.
+            cuspes[i].dy = (dist_y / tempo_de_voo_frames) - (0.5f * G_CUSPE * (tempo_de_voo_frames - 1));
+
             break;
         }
     }
@@ -273,14 +276,33 @@ void update_inimigos(Inimigo inimigos[], Tiro tiros[], Cuspe cuspes[], Jogador *
                     break;
 
                 case ZUMBI_CUSPIDOR:
-                    // Fica parado e ataca à distância
-                    if (inimigos[i].timer_ataque > 0) {
-                        inimigos[i].timer_ataque--;
-                    } else {
-                        // Se o jogador estiver na frente e a uma distância razoável
-                        if (fabs(jogador->x - inimigos[i].x) < LARGURA / 2) {
-                            disparar_cuspe(cuspes, inimigos[i].x, inimigos[i].y, jogador->x);
-                            inimigos[i].timer_ataque = 180; // Cooldown de 3 segundos
+                    // Calcula a distância horizontal até o jogador
+                    float dist_para_jogador_x = jogador->x - inimigos[i].x;
+                    float dist_abs = fabs(dist_para_jogador_x);
+
+                    // Define a "zona de conforto" para atirar (em pixels)
+                    const float DIST_MIN = 250.0;
+                    const float DIST_MAX = 400.0;
+
+                    // --- Lógica de Movimento ---
+                    if (dist_abs > DIST_MAX) {
+                        // Se está muito longe, se aproxima lentamente
+                        if (dist_para_jogador_x > 0) inimigos[i].x += VELOCIDADE_ZUMBI * 0.75;
+                        else inimigos[i].x -= VELOCIDADE_ZUMBI * 0.75;
+                    } 
+                    else if (dist_abs < DIST_MIN) {
+                        // Se está muito perto, se afasta lentamente
+                        if (dist_para_jogador_x > 0) inimigos[i].x -= VELOCIDADE_ZUMBI * 0.5;
+                        else inimigos[i].x += VELOCIDADE_ZUMBI * 0.5;
+                    } 
+                    else {
+                        // --- Lógica de Ataque (se estiver na distância ideal) ---
+                        if (inimigos[i].timer_ataque > 0) {
+                            inimigos[i].timer_ataque--;
+                        } else {
+                            // Chama a função de cuspir passando a posição X e Y do jogador
+                            disparar_cuspe(cuspes, inimigos[i].x, inimigos[i].y, jogador->x, jogador->y);
+                            inimigos[i].timer_ataque = 180; // Reinicia o cooldown para 3 segundos
                         }
                     }
                     break;
@@ -340,6 +362,48 @@ void desenhar_jogador(Jogador *jogador) {
         al_map_rgb(255, 128, 0)); // Cor laranja
 }
 
+void aplicar_dano_cuspes(Jogador *jogador, Cuspe cuspes[]) {
+    // Se o jogador já está intangível, não precisa verificar a colisão
+    if (jogador->intangivel_timer > 0) {
+        return;
+    }
+
+    // Itera por todos os possíveis cuspes na tela
+    for (int i = 0; i < MAX_CUSPES; i++) {
+        if (cuspes[i].ativo) {
+            // Lógica de colisão: verifica a distância entre o centro do jogador e o centro do cuspe
+            float raio_jogador = TAM_JOGADOR / 2.0;
+            float raio_cuspe = 7.0; // Raio do círculo do cuspe que definimos no desenho
+
+            float dist_x = (jogador->x + raio_jogador) - cuspes[i].x;
+            float dist_y = (jogador->y + raio_jogador) - cuspes[i].y;
+            float distancia_centros = sqrt(dist_x * dist_x + dist_y * dist_y);
+
+            // Se a distância for menor que a soma dos raios, houve colisão
+            if (distancia_centros < raio_jogador + raio_cuspe) {
+                
+                cuspes[i].ativo = false; // O cuspe que atingiu desaparece
+
+                // Aplica os mesmos efeitos de dano que o toque
+                jogador->hp--;
+                jogador->intangivel_timer = 180; // Fica intangível por 3 segundos
+
+                // Aplica um pequeno knockback
+                if (cuspes[i].dx > 0) { // Se o cuspe veio da esquerda
+                    jogador->x += 20; // Empurra o jogador para a direita
+                } else { // Se o cuspe veio da direita
+                    jogador->x -= 20; // Empurra para a esquerda
+                }
+
+                atualizar_velocidade_jogador(jogador);
+
+                // Sai do loop para que o jogador só tome um dano por vez
+                break;
+            }
+        }
+    }
+}
+
 int inicia_jogo(ALLEGRO_DISPLAY* disp, ALLEGRO_FONT* font, ALLEGRO_BITMAP* fundo) {
     al_init_primitives_addon();
     ALLEGRO_TIMER* timer = al_create_timer(1.0 / 60.0);
@@ -386,7 +450,7 @@ int inicia_jogo(ALLEGRO_DISPLAY* disp, ALLEGRO_FONT* font, ALLEGRO_BITMAP* fundo
             if (jogador.intangivel_timer > 0) jogador.intangivel_timer--;
             
             aplicar_dano_jogador(&jogador, inimigos, MAX_INIMIGOS);
-
+            aplicar_dano_cuspes(&jogador, cuspes);
             if (teclas[ALLEGRO_KEY_A] && jogador.x > 0) 
             {
                 jogador.x -= VELOCIDADE_BASE * jogador.velocidade;
@@ -474,7 +538,7 @@ int inicia_jogo(ALLEGRO_DISPLAY* disp, ALLEGRO_FONT* font, ALLEGRO_BITMAP* fundo
                     }
 
                     float brilho = (float)inimigos[i].hp / inimigos[i].hp_max;
-                    cor = al_map_rgb(0, 255 * brilho, 0); // Exemplo para o cuspidor
+                    cor = al_map_rgb(0, 255 * brilho, 0);
 
                     al_draw_filled_circle(inimigos[i].x - camera_x, inimigos[i].y, TAM_INIMIGO, cor);
                 }
