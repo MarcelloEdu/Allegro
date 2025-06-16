@@ -54,11 +54,22 @@ typedef struct {
     bool ativo;
 } Cuspe;
 
-
 typedef enum {
     ZUMBI_ANDARILHO,
     ZUMBI_CUSPIDOR
 } TipoInimigo;
+
+typedef struct {
+    float x, y;
+    int hp;
+    int hp_max;
+    bool ativo;
+} Chefe;
+
+typedef enum {
+    FASE_NORMAL,
+    BATALHA_CHEFE
+} EstadoDaFase;
 
 typedef struct {
     float x, y;
@@ -412,6 +423,15 @@ int inicia_jogo(ALLEGRO_DISPLAY* disp, ALLEGRO_FONT* font, ALLEGRO_BITMAP* fundo
     float camera_x = 0;
     float mundo_largura = al_get_bitmap_width(fundo);
 
+    EstadoDaFase estado_atual = FASE_NORMAL;
+    Chefe chefe;
+    chefe.ativo = false; // O chefe começa inativo
+    chefe.x = mundo_largura - LARGURA / 8; // Posição do chefe no final do mapa
+    chefe.y = ALTURA - ALTURA_CHAO - 150; // Um pouco acima do chão
+    chefe.hp_max = 1000; // Vida do chefe (ex: 50 tiros)
+    chefe.hp = chefe.hp_max;
+
+    // ... (resto da inicialização do jogador, inimigos, etc.) ...
     al_register_event_source(fila, al_get_keyboard_event_source());
     al_register_event_source(fila, al_get_display_event_source(disp));
     al_register_event_source(fila, al_get_timer_event_source(timer));
@@ -451,6 +471,7 @@ int inicia_jogo(ALLEGRO_DISPLAY* disp, ALLEGRO_FONT* font, ALLEGRO_BITMAP* fundo
             
             aplicar_dano_jogador(&jogador, inimigos, MAX_INIMIGOS);
             aplicar_dano_cuspes(&jogador, cuspes);
+
             if (teclas[ALLEGRO_KEY_A] && jogador.x > 0) 
             {
                 jogador.x -= VELOCIDADE_BASE * jogador.velocidade;
@@ -460,26 +481,46 @@ int inicia_jogo(ALLEGRO_DISPLAY* disp, ALLEGRO_FONT* font, ALLEGRO_BITMAP* fundo
                 jogador.x += VELOCIDADE_BASE * jogador.velocidade;
             }
 
-            camera_x = jogador.x - LARGURA / 2.0;
-            if (camera_x < 0) camera_x = 0;
-            if (camera_x > mundo_largura - LARGURA) camera_x = mundo_largura - LARGURA;
+            if (estado_atual == FASE_NORMAL) {
+                camera_x = jogador.x - LARGURA / 2.0;
+                if (camera_x < 0) camera_x = 0;
+                if (camera_x > mundo_largura - LARGURA) camera_x = mundo_largura - LARGURA;
+            }
+
+             // Transição para a batalha do chefe
+            if (estado_atual == FASE_NORMAL && jogador.x > mundo_largura - LARGURA) {
+                estado_atual = BATALHA_CHEFE;
+                chefe.ativo = true;
+            }
+
+            // Trava a câmera na arena do chefe
+            if (estado_atual == BATALHA_CHEFE) {
+                camera_x = mundo_largura - LARGURA;
+            }
 
             update_jogador(&jogador);
             update_tiros(tiros, MAX_TIROS, camera_x);
             update_cuspes(cuspes, MAX_CUSPES, camera_x);
             update_inimigos(inimigos, tiros, cuspes, &jogador, &zumbis_mortos, camera_x);
 
+            /*
+            ========================
+            LÓGICA DE UPDATE_CHEFE
+            ========================
+            */
+
             frames_inimigo++;
-            if (frames_inimigo >= 120) {
+            int frequencia_inimigos = (estado_atual == BATALHA_CHEFE) ? 300 : 120;
+            if (frames_inimigo >= frequencia_inimigos) {
                 gerar_inimigo(inimigos, MAX_INIMIGOS, camera_x);
                 frames_inimigo = 0;
             }
             redesenhar = true;
         }
-        else if (ev.type == ALLEGRO_EVENT_DISPLAY_CLOSE) {
+        else if (ev.type == ALLEGRO_EVENT_DISPLAY_CLOSE) { // se o usuário fechar a janela
             rodando = false;
         }
-        else if (ev.type == ALLEGRO_EVENT_KEY_DOWN) {
+        else if (ev.type == ALLEGRO_EVENT_KEY_DOWN) { //logica de tiro para todos os lados
             teclas[ev.keyboard.keycode] = true;
             if (ev.keyboard.keycode == ALLEGRO_KEY_A) jogador.direcao = -1;
             else if (ev.keyboard.keycode == ALLEGRO_KEY_D) jogador.direcao = 1;
@@ -519,6 +560,11 @@ int inicia_jogo(ALLEGRO_DISPLAY* disp, ALLEGRO_FONT* font, ALLEGRO_BITMAP* fundo
             else if (ev.keyboard.keycode == ALLEGRO_KEY_D && teclas[ALLEGRO_KEY_A]) jogador.direcao = -1;
         }
 
+        /*
+        ========================
+            LÓGICA DE DESENHO
+        ========================
+        */
         if (redesenhar && al_is_event_queue_empty(fila)) {
             al_draw_bitmap_region(fundo, camera_x, 0, LARGURA, ALTURA, 0, 0, 0);
 
