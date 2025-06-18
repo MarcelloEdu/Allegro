@@ -61,9 +61,13 @@ typedef enum {
 
 typedef struct {
     float x, y;
+    float dx;                   // Velocidade de movimento horizontal do chefe
     int hp;
     int hp_max;
     bool ativo;
+    int timer_ataque_principal; // Cooldown entre as rajadas de tiros
+    int timer_rajada;           // Cooldown entre cada tiro de uma rajada
+    int tiros_na_rajada;      // Quantos tiros ainda faltam na rajada atual
 } Chefe;
 
 typedef enum {
@@ -109,8 +113,9 @@ void tela_game_over(ALLEGRO_FONT* font, int zumbis_mortos) {
         al_wait_for_event(fila_game_over, &ev);
 
         if (ev.type == ALLEGRO_EVENT_KEY_DOWN) {
-            // Se o jogador pressionar ENTER ou ESC, sai da tela de Game Over
+            // Se o jogador pressionar ENTER ou ESC, sai da tela de Game Over e chama o menu
             if (ev.keyboard.keycode == ALLEGRO_KEY_ENTER || ev.keyboard.keycode == ALLEGRO_KEY_ESCAPE) {
+                
                 sair = true;
             }
         }
@@ -118,6 +123,24 @@ void tela_game_over(ALLEGRO_FONT* font, int zumbis_mortos) {
 
     // Limpa a fila de eventos local
     al_destroy_event_queue(fila_game_over);
+}
+
+void tela_vitoria(ALLEGRO_FONT* font) {
+    al_clear_to_color(al_map_rgb(20, 40, 20));
+    al_draw_text(font, al_map_rgb(0, 200, 0), LARGURA / 2, ALTURA / 3, ALLEGRO_ALIGN_CENTER, "VOCE VENCEU!");
+    al_draw_text(font, al_map_rgb(150, 150, 150), LARGURA / 2, ALTURA - 100, ALLEGRO_ALIGN_CENTER, "Pressione ENTER para voltar ao menu");
+    al_flip_display();
+    
+    ALLEGRO_EVENT_QUEUE* fila_vitoria = al_create_event_queue();
+    al_register_event_source(fila_vitoria, al_get_keyboard_event_source());
+    ALLEGRO_EVENT ev;
+    while (1) {
+        al_wait_for_event(fila_vitoria, &ev);
+        if (ev.type == ALLEGRO_EVENT_KEY_DOWN && (ev.keyboard.keycode == ALLEGRO_KEY_ENTER || ev.keyboard.keycode == ALLEGRO_KEY_ESCAPE)) {
+            break;
+        }
+    }
+    al_destroy_event_queue(fila_vitoria);
 }
 
 void get_movement(bool *teclas, float *x, float *y) {
@@ -359,6 +382,76 @@ void update_jogador(Jogador *jogador) {
     }
 }
 
+bool update_chefe(Chefe *chefe, Jogador *jogador, Tiro tiros[], Cuspe cuspes[], float mundo_largura) {
+    // Se o chefe não estiver ativo, não faz nada
+    if (!chefe->ativo) return false;
+
+    // --- 1. LÓGICA DE MOVIMENTO ---
+    // O chefe se move de um lado para o outro na arena
+    chefe->x += chefe->dx;
+    float chefe_largura = 100;
+    
+    // Agora esta lógica usará o 'mundo_largura' correto
+    if (chefe->dx > 0 && chefe->x + chefe_largura > mundo_largura) {
+        chefe->dx *= -1;
+    } else if (chefe->dx < 0 && chefe->x < mundo_largura - LARGURA) {
+        chefe->dx *= -1;
+    }
+
+    // --- 2. LÓGICA DE ATAQUE (RAJADA DE 6 TIROS) ---
+    // Se não está no meio de uma rajada, espera o cooldown principal
+    if (chefe->tiros_na_rajada <= 0) {
+        if (chefe->timer_ataque_principal > 0) {
+            chefe->timer_ataque_principal--;
+        } else {
+            // É hora de começar uma nova rajada!
+            chefe->tiros_na_rajada = 6;
+            chefe->timer_rajada = 0; // Atira o primeiro tiro imediatamente
+            chefe->timer_ataque_principal = 240; // Próxima rajada em 4 segundos
+        }
+    }
+
+    // Se uma rajada está em andamento, dispara os tiros
+    if (chefe->tiros_na_rajada > 0) {
+        if (chefe->timer_rajada > 0) {
+            chefe->timer_rajada--;
+        } else {
+            // Posição da "boca" do chefe
+            float boca_x = chefe->x + (chefe_largura / 2);
+            float boca_y = chefe->y + 100; // Ajuste conforme seu futuro sprite
+
+            // Dispara um cuspe mirando no jogador
+            disparar_cuspe(cuspes, boca_x, boca_y, jogador->x, jogador->y);
+            
+            chefe->tiros_na_rajada--; // Um tiro a menos na rajada
+            chefe->timer_rajada = 15; // Próximo tiro da rajada em 1/4 de segundo
+        }
+    }
+
+    // --- 3. LÓGICA DE DANO (CHEFE RECEBENDO TIROS) ---
+    for (int i = 0; i < MAX_TIROS; i++) {
+        if (tiros[i].ativo) {
+            // Colisão com o retângulo do chefe
+            if (tiros[i].x > chefe->x && tiros[i].x < chefe->x + chefe_largura &&
+                tiros[i].y > chefe->y && tiros[i].y < chefe->y + 150) // 150 é a altura do chefe
+            {
+                tiros[i].ativo = false;
+                chefe->hp -= 20; // Dano do tiro do jogador
+                printf("HP do Chefe: %d\n", chefe->hp); // Debug
+            }
+        }
+    }
+
+    // --- 4. CONDIÇÃO DE DERROTA ---
+    if (chefe->hp <= 0) {
+        chefe->ativo = false;
+        printf("CHEFE DERROTADO!\n");
+        return true; // Retorna true para sinalizar a vitória
+    }
+
+    return false; // Chefe continua vivo
+}
+
 void pular(Jogador *jogador) {
     if (jogador->no_chao) {
         jogador->dy = PULO_FORCA; // Aplica a força do pulo
@@ -371,6 +464,30 @@ void desenhar_jogador(Jogador *jogador) {
         jogador->x, jogador->y,
         jogador->x + TAM_JOGADOR, jogador -> y + TAM_JOGADOR,
         al_map_rgb(255, 128, 0)); // Cor laranja
+}
+
+void desenhar_chefe(Chefe *chefe, float camera_x) {
+    // Se o chefe não estiver ativo, a função não faz nada
+    if (!chefe->ativo) {
+        return;
+    }
+
+    // Define as dimensões e a posição do chefe na tela
+    float chefe_largura = 100;
+    float chefe_altura = 150;
+    float tela_x = chefe->x - camera_x;
+    float tela_y = chefe->y;
+
+    // --- Desenha o corpo do chefe ---
+    // A cor muda de vermelho para preto conforme o HP diminui, dando um feedback visual do dano
+    float hp_ratio = (float)chefe->hp / chefe->hp_max;
+    if (hp_ratio < 0) hp_ratio = 0; // Garante que não fique negativo
+    unsigned char red_component = 150 + (105 * hp_ratio); // Varia de 255 a 150
+
+    al_draw_filled_rectangle(tela_x, tela_y,
+                             tela_x + chefe_largura, tela_y + chefe_altura,
+                             al_map_rgb(red_component, 0, 0));
+
 }
 
 void aplicar_dano_cuspes(Jogador *jogador, Cuspe cuspes[]) {
@@ -424,21 +541,31 @@ int inicia_jogo(ALLEGRO_DISPLAY* disp, ALLEGRO_FONT* font, ALLEGRO_BITMAP* fundo
     float mundo_largura = al_get_bitmap_width(fundo);
 
     EstadoDaFase estado_atual = FASE_NORMAL;
-    Chefe chefe;
-    chefe.ativo = false; // O chefe começa inativo
-    chefe.x = mundo_largura - LARGURA / 8; // Posição do chefe no final do mapa
-    chefe.y = ALTURA - ALTURA_CHAO - 150; // Um pouco acima do chão
-    chefe.hp_max = 1000; // Vida do chefe (ex: 50 tiros)
-    chefe.hp = chefe.hp_max;
 
-    // ... (resto da inicialização do jogador, inimigos, etc.) ...
+    Chefe chefe;
+    chefe.ativo = false;
+    chefe.x = mundo_largura - LARGURA / 2;
+    chefe.y = ALTURA - ALTURA_CHAO - 150;
+    chefe.hp_max = 1000;
+    chefe.hp = chefe.hp_max;
+    chefe.dx = -1.0; // Velocidade inicial do chefe
+    chefe.timer_ataque_principal = 120; // Começa a atacar depois de 2 segundos
+    chefe.tiros_na_rajada = 0;
+    chefe.timer_rajada = 0;
+
     al_register_event_source(fila, al_get_keyboard_event_source());
     al_register_event_source(fila, al_get_display_event_source(disp));
     al_register_event_source(fila, al_get_timer_event_source(timer));
 
     Jogador jogador = {
-        .x = LARGURA / 2, .y = ALTURA - ALTURA_CHAO - TAM_JOGADOR, .dy = 0,
-        .no_chao = true, .direcao = 1, .hp = 8, .velocidade = 2.0, .intangivel_timer = 0
+        .x = LARGURA / 2, 
+        .y = ALTURA - ALTURA_CHAO - TAM_JOGADOR, 
+        .dy = 0,
+        .no_chao = true,
+        .direcao = 1, 
+        .hp = 8, 
+        .velocidade = 2.0, 
+        .intangivel_timer = 0
     };
 
     Tiro tiros[MAX_TIROS] = {0};
@@ -460,10 +587,17 @@ int inicia_jogo(ALLEGRO_DISPLAY* disp, ALLEGRO_FONT* font, ALLEGRO_BITMAP* fundo
         if (ev.type == ALLEGRO_EVENT_TIMER) {
             frame_counter++;
 
-            //verifica se o jogador morreu
+            //SE O JOGADOR MORREU
             if (jogador.hp <= 0) {
                 al_rest(0.5);
                 tela_game_over(font, zumbis_mortos);
+                rodando = false;
+            }
+
+            //SE O CHEFE MORREU
+            if(estado_atual == BATALHA_CHEFE && chefe.hp <= 0) {
+                al_rest(0.5);
+                tela_vitoria(font);
                 rodando = false;
             }
 
@@ -472,15 +606,29 @@ int inicia_jogo(ALLEGRO_DISPLAY* disp, ALLEGRO_FONT* font, ALLEGRO_BITMAP* fundo
             aplicar_dano_jogador(&jogador, inimigos, MAX_INIMIGOS);
             aplicar_dano_cuspes(&jogador, cuspes);
 
-            if (teclas[ALLEGRO_KEY_A] && jogador.x > 0) 
-            {
+            float limite_esquerdo = 0;
+            float limite_direito = mundo_largura - TAM_JOGADOR;
+
+            // Se estiver na arena do chefe, o limite esquerdo muda para travar o jogador na tela
+            if (estado_atual == BATALHA_CHEFE) {
+                limite_esquerdo = mundo_largura - LARGURA;
+            }
+
+            // Aplica o movimento, respeitando os limites dinâmicos
+            if (teclas[ALLEGRO_KEY_A] && jogador.x > limite_esquerdo) {
                 jogador.x -= VELOCIDADE_BASE * jogador.velocidade;
-            } 
-            else if (teclas[ALLEGRO_KEY_D] && jogador.x < mundo_largura - TAM_JOGADOR) 
-            {
+            } else if (teclas[ALLEGRO_KEY_D] && jogador.x < limite_direito) {
                 jogador.x += VELOCIDADE_BASE * jogador.velocidade;
             }
 
+            // Garante que o jogador não fique preso fora dos limites
+            if (jogador.x < limite_esquerdo) {
+                jogador.x = limite_esquerdo;
+            }
+            if (jogador.x > limite_direito) {
+                jogador.x = limite_direito;
+            }
+            
             if (estado_atual == FASE_NORMAL) {
                 camera_x = jogador.x - LARGURA / 2.0;
                 if (camera_x < 0) camera_x = 0;
@@ -502,15 +650,11 @@ int inicia_jogo(ALLEGRO_DISPLAY* disp, ALLEGRO_FONT* font, ALLEGRO_BITMAP* fundo
             update_tiros(tiros, MAX_TIROS, camera_x);
             update_cuspes(cuspes, MAX_CUSPES, camera_x);
             update_inimigos(inimigos, tiros, cuspes, &jogador, &zumbis_mortos, camera_x);
-
-            /*
-            ========================
-            LÓGICA DE UPDATE_CHEFE
-            ========================
-            */
+            update_chefe(&chefe, &jogador, tiros, cuspes, mundo_largura);
 
             frames_inimigo++;
-            int frequencia_inimigos = (estado_atual == BATALHA_CHEFE) ? 300 : 120;
+            //verifica a frequencia com base na fase do jogo
+            int frequencia_inimigos = (estado_atual == BATALHA_CHEFE) ? 60 : 120;
             if (frames_inimigo >= frequencia_inimigos) {
                 gerar_inimigo(inimigos, MAX_INIMIGOS, camera_x);
                 frames_inimigo = 0;
@@ -573,6 +717,8 @@ int inicia_jogo(ALLEGRO_DISPLAY* disp, ALLEGRO_FONT* font, ALLEGRO_BITMAP* fundo
                                           jogador.x - camera_x + TAM_JOGADOR, jogador.y + TAM_JOGADOR,
                                           al_map_rgb(255, 140, 0));
             }
+
+            desenhar_chefe(&chefe, camera_x);
             
             for (int i = 0; i < MAX_INIMIGOS; i++) {
                 if (inimigos[i].ativo) {
@@ -715,3 +861,4 @@ int main()
 
     return 0;
 }
+
