@@ -1,63 +1,73 @@
-#include <allegro5/allegro5.h>
-#include <allegro5/allegro_font.h>
-#include <allegro5/allegro_ttf.h>
-#include <allegro5/allegro_image.h>
-#include <allegro5/allegro_primitives.h>
 #include <stdio.h>
 #include <math.h>
-#include <stdlib.h>
-#include <time.h>
+#include <stdlib.h> // Para a função rand()
+#include <allegro5/allegro5.h>
+#include <allegro5/allegro_font.h>
+#include <allegro5/allegro_image.h>
+#include <allegro5/allegro_primitives.h>
+#include <allegro5/allegro_ttf.h>
 
-//compilação: gcc AggresiveSquares.c -o jogo $(pkg-config --libs allegro-5 allegro_font-5 allegro_ttf-5 allegro_image-5 allegro_primitives-5) -lm
+// ==========================================================================
+// 1. DEFINIÇÕES GLOBAIS (TIPOS E CONSTANTES)
+// ==========================================================================
 
-#define OPCOES 3
-
-#define LARGURA 1920
-#define ALTURA 1080
-#define ALTURA_CHAO 150
-#define MAX_TIROS 100
-#define MAX_INIMIGOS 50
-#define MAX_CUSPES 50
-#define TAM_JOGADOR 30
+#define LARGURA 1680
+#define ALTURA 1050
+#define TAM_JOGADOR 50
+#define PLAYER_ESCALA 1.0
+#define ALTURA_CHAO 50
+#define GRAVIDADE 0.3
+#define PULO_FORCA -10.0
 #define TAM_TIROS 10
 #define TAM_INIMIGO 20
-
+#define MAX_TIROS 20 // Aumentado para suportar rajadas
+#define MAX_INIMIGOS 15
+#define MAX_CUSPES 50
 #define VELOCIDADE_ZUMBI 1.0
-#define VELOCIDADE_BASE 2.0
+#define VELOCIDADE_BASE 2.0 // Aumentado um pouco a velocidade base
+#define MAX_MUNICAO_ITENS 10
+#define MAX_FRAMES_POR_ANIM 15
 
-#define GRAVIDADE 0.5
-#define PULO_FORCA -10.0
+// --- Enums para Estados ---
+typedef enum { FASE_NORMAL, BATALHA_CHEFE } EstadoDaFase;
+typedef enum { ZUMBI_ANDARILHO, ZUMBI_CUSPIDOR } TipoInimigo;
+typedef enum { NORMAL, CORRENDO, CANSADO, COOLDOWN } EstadoStamina;
 
+typedef struct {
+    ALLEGRO_BITMAP* fundo;
+    ALLEGRO_BITMAP* hp_sprite;
+    ALLEGRO_BITMAP* caveira_sprite;
+    ALLEGRO_BITMAP* player_sprite;
+    ALLEGRO_FONT* font;
+} Assets;
 
+// Struct para definir um único quadro de uma spritesheet
+typedef struct {
+    int x; // Posição X do quadro na imagem
+    int y; // Posição Y do quadro na imagem
+    int w; // Largura (width) do quadro
+    int h; // Altura (height) do quadro
+} Frame;
 
 typedef struct {
     float x, y;
-    float dy; //velocidade do jogador
-    bool no_chao;
-    int direcao;
-    int hp;
-    float velocidade; // velocidade do jogador
-    int intangivel_timer;
+    float dy;
+    bool no_chao, ativo;
+    int direcao, hp, intangivel_timer, municao, timer_stamina;
+    float velocidade;
+    EstadoStamina estado_stamina; // Estado da stamina do jogador
 
+    Frame* anim_sequencia_atual; // Ponteiro para o vetor da animação atual
+    int    num_frames_na_anim;   // Quantos frames tem a animação atual
+    int    anim_frame_atual;     // Índice do frame atual (0, 1, 2...)
+    int    anim_timer;           // Timer para controlar a velocidade
 } Jogador;
 
-typedef struct {
-    float x, y;
-    float dx;
-    float dy;
-    bool ativo;
-} Tiro;
+typedef struct {float x, y, dx, dy; bool ativo; } Tiro;
 
-typedef struct {
-    float x, y;
-    float dx, dy;
-    bool ativo;
-} Cuspe;
+typedef struct {float x, y; bool ativo; int tempo_de_vida;} ItemMunicao;
 
-typedef enum {
-    ZUMBI_ANDARILHO,
-    ZUMBI_CUSPIDOR
-} TipoInimigo;
+typedef struct {float x, y, dx, dy; bool ativo; } Cuspe;
 
 typedef struct {
     float x, y;
@@ -69,11 +79,6 @@ typedef struct {
     int timer_rajada;           // Cooldown entre cada tiro de uma rajada
     int tiros_na_rajada;      // Quantos tiros ainda faltam na rajada atual
 } Chefe;
-
-typedef enum {
-    FASE_NORMAL,
-    BATALHA_CHEFE
-} EstadoDaFase;
 
 typedef struct {
     float x, y;
@@ -87,6 +92,186 @@ typedef struct {
     int timer_ataque;       // Cooldown para o próximo ataque
 } Inimigo;
 
+/*===========================*/
+/*DADOS DA ANIMAÇÃO DO JOGADOR*/
+/*============================*/
+
+
+
+// --- Animações ---
+Frame anim_idle[MAX_FRAMES_POR_ANIM] = {
+    // {x, y, w, h)
+    {48, 63, 41, 65},  // Frame 1
+    {48 + 1 * 129 -1, 63, 41, 65}, // Frame 2
+    {48 + 2  * 129 -2, 63, 41, 65}, // Frame 3 
+    {48 + 3 * 129 -3, 63, 41, 65}, // Frame 4
+    {48 + 4 * 129 -4, 63, 41, 65}, // Frame 5
+    {48 + 5 * 129 -5, 63, 41, 65}  // Frame 6
+};
+
+Frame anim_andando[MAX_FRAMES_POR_ANIM] = {
+    // {x, y, w, h)
+    {48, 190, 41, 65},  // Frame 1
+    {48 + 1* 128, 190, 41, 65}, // Frame 2
+    {48 + 2* 128, 190, 41, 65}, // Frame 3
+    {48 + 3* 128, 190, 41, 65}, // Frame 4
+    {48 + 4 * 128, 190, 41, 65}, // Frame 5
+    {48 + 5 * 128, 190, 41, 65},  // Frame 6
+    {48 + 6 * 128, 190, 41, 65}, // Frame 7
+    {48 + 7 * 128 , 190, 41, 65}  // Frame 8
+};
+
+Frame anim_correndo[MAX_FRAMES_POR_ANIM] = {
+    // {x, y, w, h)
+    {43, 317, 41, 65},  // Frame 1
+    {43 + 1 * 125, 317, 41, 65}, // Frame 2
+    {43 + 2 * 125, 317, 41, 65}, // Frame 3
+    {43 + 3 * 125, 317, 41, 65}, // Frame 4
+    {43 + 4 * 125, 317, 41, 65}, // Frame 5
+    {43 + 5 * 125, 317, 41, 65}, // Frame 6
+    {43 + 6 * 125, 317, 41, 65}, // Frame 7
+    {43 + 7 * 125 ,317 ,41 ,65}   // Frame 8
+};
+
+Frame anim_pulo[MAX_FRAMES_POR_ANIM] = {
+    // {x, y, w, h)
+    {53, 444, 41, 65},  // Frame 1
+    {53 + 1 * 129, 444, 41, 65}, // Frame 2
+    {53 + 2 * 129, 444, 41, 65}, // Frame 3
+    {53 + 3 * 129, 444, 41, 65}, // Frame 4
+    {53 + 4 * 129, 444, 41, 65}, // Frame 5
+    {53 + 5 * 129, 444, 41, 65}, // Frame 6
+    {53 + 6 * 129, 444, 41, 65}, // Frame 7
+    {53 + 7 * 129 ,444 ,41 ,65}   // Frame 8
+};
+
+Frame anim_tiro[MAX_FRAMES_POR_ANIM] = {
+    // {x, y, w, h)
+    {0, 699, 41, 65},  // Frame 1
+    {10, 699, 50, 65}, // Frame 2
+    {20, 699, 104, 65}, // Frame 3
+    {30, 699, 104, 65}, // Frame 4
+    {40, 699, 104, 65}, // Frame 5
+    {50, 699, 104, 65},   // Frame 6
+    {60, 699, 41, 65}, // Frame 7
+    {70, 699, 41, 65}, // Frame 8
+    {80, 699, 41, 65}, // Frame 9
+    {90, 699, 41, 65},   // Frame 10
+    {100, 699, 41, 65},  // Frame 11
+    {110, 699, 41, 65} // Frame 12
+};
+
+Frame anim_reload[MAX_FRAMES_POR_ANIM] = {
+    // {x, y, w, h)
+    {0, 828, 41, 65},  // Frame 1
+    {10, 828, 41, 65}, // Frame 2
+    {20, 828, 41, 65}, // Frame 3
+    {30, 828, 41, 65}, // Frame 4
+    {40, 828, 41, 65}, // Frame 5
+    {50, 828, 41, 65}, // Frame 6
+    {60, 828, 41, 65}, // Frame 7
+    {70, 828, 41, 65}, // Frame 8
+    {80, 828, 41, 65}, // Frame 9
+    {90, 828, 41, 65}, // Frame 10
+    {100, 828, 41, 65}, // Frame 11
+    {110, 828, 41, 65} // Frame 12
+};
+
+Frame anim_morte[MAX_FRAMES_POR_ANIM] = {
+    // {x, y, w, h)
+    {0, 1210, 50, 65},  // Frame 1
+    {10, 1210, 50, 65}, // Frame 2
+    {20, 1210, 59, 65}, // Frame 3
+    {30, 1210, 81, 65} // Frame 4
+};
+
+int num_frames_idle = 6;
+int num_frames_andando = 8;
+int num_frames_correndo = 8;
+int num_frames_pulo = 9;
+int num_frames_tiro = 12;
+int num_frames_reload = 12;
+int num_frames_morte = 4;
+
+void atualiza_animacao_jogador(Jogador* jogador, bool esta_andando) {
+    // Ponteiros para as animações definidas globalmente
+    Frame* proxima_anim = anim_idle;
+    int    proximo_num_frames = num_frames_idle;
+
+    // Decide qual será a próxima animação
+    if (!jogador->no_chao) {
+        proxima_anim = anim_pulo;
+        proximo_num_frames = num_frames_andando;
+    } else if (esta_andando) {
+        proxima_anim = anim_andando;
+        proximo_num_frames = num_frames_andando;
+    } else {
+        proxima_anim = anim_idle;
+        proximo_num_frames = num_frames_idle;
+    }
+
+    // Se a animação mudou, reinicia a contagem de frames
+    if (jogador->anim_sequencia_atual != proxima_anim) {
+        jogador->anim_sequencia_atual = proxima_anim;
+        jogador->num_frames_na_anim = proximo_num_frames;
+        jogador->anim_frame_atual = 0;
+        jogador->anim_timer = 0;
+    }
+
+    // Avança o frame da animação baseado no timer
+    const int velocidade_anim = 8;
+    jogador->anim_timer++;
+    if (jogador->anim_timer >= velocidade_anim) {
+        jogador->anim_timer = 0;
+        jogador->anim_frame_atual = (jogador->anim_frame_atual + 1) % jogador->num_frames_na_anim;
+    }
+}
+
+void desenhar_menu(Assets* assets, int item_selecionado) {
+    if (assets->fundo) {
+        al_draw_bitmap(assets->fundo, 0, 0, 0);
+    } else {
+        al_clear_to_color(al_map_rgb(0,0,0));
+    }
+
+    const char* itens[] = {"JOGAR", "CONFIGURACOES", "SAIR"};
+    for (int i = 0; i < 3; i++) {
+        ALLEGRO_COLOR cor = (i == item_selecionado) ? al_map_rgb(255, 255, 0) : al_map_rgb(255, 255, 255);
+        al_draw_text(assets->font, cor, LARGURA / 2, ALTURA / 2 - 40 + i * 40, ALLEGRO_ALIGN_CENTER, itens[i]);
+    }
+    al_flip_display();
+}
+
+int loop_do_menu(ALLEGRO_EVENT_QUEUE *queue, Assets* assets) {
+    int item_selecionado = 0;
+    desenhar_menu(assets, item_selecionado);
+
+    while (true) {
+        ALLEGRO_EVENT ev;
+        al_wait_for_event(queue, &ev);
+
+        if (ev.type == ALLEGRO_EVENT_KEY_DOWN) {
+            switch (ev.keyboard.keycode) {
+                case ALLEGRO_KEY_UP:
+                    item_selecionado = (item_selecionado == 0) ? 2 : item_selecionado - 1;
+                    break;
+                case ALLEGRO_KEY_DOWN:
+                    item_selecionado = (item_selecionado + 1) % 3;
+                    break;
+                case ALLEGRO_KEY_ENTER:
+                    return item_selecionado; // Retorna a escolha do usuário
+                case ALLEGRO_KEY_ESCAPE:
+                    return 2; // Trata ESC como "SAIR"
+            }
+        } else if (ev.type == ALLEGRO_EVENT_DISPLAY_CLOSE) {
+            return 2; // Trata o 'X' da janela como "SAIR"
+        }
+
+        // Redesenha o menu somente se houver uma mudança de input
+        desenhar_menu(assets, item_selecionado);
+    }
+}
+
 void tela_game_over(ALLEGRO_FONT* font, int zumbis_mortos) {
     // Cria uma fila de eventos local apenas para esta tela
     ALLEGRO_EVENT_QUEUE* fila_game_over = al_create_event_queue();
@@ -95,15 +280,12 @@ void tela_game_over(ALLEGRO_FONT* font, int zumbis_mortos) {
     bool sair = false;
     while (!sair) {
         // --- Desenho da Tela ---
-        al_clear_to_color(al_map_rgb(20, 0, 0)); // fundo_menu vermelho bem escuro
+        al_clear_to_color(al_map_rgb(20, 0, 0)); 
 
-        // Texto "GAME OVER"
         al_draw_text(font, al_map_rgb(200, 0, 0), LARGURA / 2, ALTURA / 3, ALLEGRO_ALIGN_CENTER, "GAME OVER");
 
-        // Exibe o número de zumbis derrotados
         al_draw_textf(font, al_map_rgb(255, 255, 255), LARGURA / 2, ALTURA / 2, ALLEGRO_ALIGN_CENTER, "Zumbis derrotados: %d", zumbis_mortos);
 
-        // Instrução para o jogador
         al_draw_text(font, al_map_rgb(150, 150, 150), LARGURA / 2, ALTURA - 100, ALLEGRO_ALIGN_CENTER, "Pressione ENTER para voltar ao menu");
 
         al_flip_display();
@@ -113,7 +295,6 @@ void tela_game_over(ALLEGRO_FONT* font, int zumbis_mortos) {
         al_wait_for_event(fila_game_over, &ev);
 
         if (ev.type == ALLEGRO_EVENT_KEY_DOWN) {
-            // Se o jogador pressionar ENTER ou ESC, sai da tela de Game Over e chama o menu
             if (ev.keyboard.keycode == ALLEGRO_KEY_ENTER || ev.keyboard.keycode == ALLEGRO_KEY_ESCAPE) {
                 
                 sair = true;
@@ -267,6 +448,82 @@ void update_tiros(Tiro tiros[], int max, float camera_x) {
         }
     }
 
+void criar_item_municao(ItemMunicao itens[], float x, float y) {
+    for (int i = 0; i < MAX_MUNICAO_ITENS; i++) {
+        if (!itens[i].ativo) {
+            itens[i].ativo = true;
+            itens[i].x = x;
+            itens[i].y = y + TAM_INIMIGO; // Dropa um pouco abaixo do centro do inimigo
+            itens[i].tempo_de_vida = 600; // Item dura 10 segundos
+            break;
+        }
+    }
+}
+
+void update_itens_municao(ItemMunicao itens[]) {
+    for (int i = 0; i < MAX_MUNICAO_ITENS; i++) {
+        if (itens[i].ativo) {
+            itens[i].tempo_de_vida--;
+            if (itens[i].tempo_de_vida <= 0) {
+                itens[i].ativo = false;
+            }
+        }
+    }
+}
+
+void update_stamina_jogador(Jogador *jogador){
+if (!jogador->ativo) return;
+
+    switch (jogador->estado_stamina) {
+        case CORRENDO:
+            jogador->timer_stamina--;
+            if (jogador->timer_stamina <= 0) {
+                jogador->estado_stamina = CANSADO;
+                jogador->timer_stamina = 4 * 60; // 4 segundos cansado
+            }
+            break;
+        case CANSADO:
+            jogador->timer_stamina--;
+            if (jogador->timer_stamina <= 0) {
+                jogador->estado_stamina = COOLDOWN;
+                jogador->timer_stamina = 8 * 60; // 8 segundos de cooldown
+            }
+            break;
+        case COOLDOWN:
+            jogador->timer_stamina--;
+            if (jogador->timer_stamina <= 0) {
+                jogador->estado_stamina = NORMAL;
+            }
+            break;
+        case NORMAL:
+            // Nenhum timer ativo, esperando o input
+            break;
+    }
+}
+
+void desenha_barra_stamina(Jogador* jogador) {
+    float max_stamina_largura = 100;
+    float stamina_ratio = 0;
+    ALLEGRO_COLOR stamina_cor = al_map_rgb(0, 200, 200); // Ciano
+
+    if (jogador->estado_stamina == CORRENDO) {
+        stamina_ratio = (float)jogador->timer_stamina / (8.0 * 60.0);
+    } else if (jogador->estado_stamina == CANSADO) {
+        stamina_cor = al_map_rgb(200, 200, 0); // Amarelo
+        stamina_ratio = 1.0;
+    } else if (jogador->estado_stamina == COOLDOWN) {
+        stamina_cor = al_map_rgb(100, 100, 100); // Cinza
+        stamina_ratio = 1.0 - ((float)jogador->timer_stamina / (8.0 * 60.0));
+    } else { // NORMAL
+        stamina_ratio = 1.0;
+    }
+
+    // Desenha o preenchimento da barra
+    al_draw_filled_rectangle(10, 35, 10 + (max_stamina_largura * stamina_ratio), 45, stamina_cor);
+    // Desenha a borda da barra
+    al_draw_rectangle(10, 35, 10 + max_stamina_largura, 45, al_map_rgb(255, 255, 255), 1);
+}
+
 void gerar_inimigo(Inimigo inimigos[], int max, float camera_x) {
     for (int i = 0; i < max; i++) {
         if (!inimigos[i].ativo) {
@@ -298,7 +555,7 @@ int dist(float x1, float y1, float x2, float y2) {
     return (int)sqrt((x2 - x1) * (x2 - x1) + (y2 - y1) * (y2 - y1));
 }
 
-void update_inimigos(Inimigo inimigos[], Tiro tiros[], Cuspe cuspes[], Jogador *jogador, int *zumbis_mortos, float camera_x) {
+void update_inimigos(Inimigo inimigos[], Tiro tiros[], Cuspe cuspes[], Jogador *jogador, int *zumbis_mortos, float camera_x, ItemMunicao itens_municao[]) {
     for (int i = 0; i < MAX_INIMIGOS; i++) {
         if (inimigos[i].ativo) {
             // --- Lógica de IA baseada no tipo de inimigo ---
@@ -320,14 +577,14 @@ void update_inimigos(Inimigo inimigos[], Tiro tiros[], Cuspe cuspes[], Jogador *
 
                     // --- Lógica de Movimento ---
                     if (dist_abs > DIST_MAX) {
-                        // Se está muito longe, se aproxima lentamente
+                        // Se está muito longe, se aproxima 
                         if (dist_para_jogador_x > 0) inimigos[i].x += VELOCIDADE_ZUMBI * 0.75;
-                        else inimigos[i].x -= VELOCIDADE_ZUMBI * 0.75;
+                        else inimigos[i].x -= VELOCIDADE_ZUMBI;
                     } 
                     else if (dist_abs < DIST_MIN) {
                         // Se está muito perto, se afasta lentamente
                         if (dist_para_jogador_x > 0) inimigos[i].x -= VELOCIDADE_ZUMBI * 0.5;
-                        else inimigos[i].x += VELOCIDADE_ZUMBI * 0.5;
+                        else inimigos[i].x += VELOCIDADE_ZUMBI;
                     } 
                     else {
                         // --- Lógica de Ataque (se estiver na distância ideal) ---
@@ -361,6 +618,10 @@ void update_inimigos(Inimigo inimigos[], Tiro tiros[], Cuspe cuspes[], Jogador *
                     if (inimigos[i].hp <= 0) {
                         inimigos[i].ativo = false;
                         (*zumbis_mortos)++;
+
+                        if (rand() % 2 == 0) {
+                        criar_item_municao(itens_municao, inimigos[i].x, inimigos[i].y);
+                        }
                     }
                 }
             }
@@ -372,7 +633,9 @@ void update_jogador(Jogador *jogador) {
     jogador->dy += GRAVIDADE; // Aplica a gravidade
     jogador->y += jogador->dy; // Atualiza a posição vertical do jogador
 
+    float altura_atual = jogador->anim_sequencia_atual[jogador->anim_frame_atual].h * PLAYER_ESCALA;
     float chao_y = ALTURA - ALTURA_CHAO - TAM_JOGADOR;
+    
     if (jogador->y > chao_y) {
         jogador->y = chao_y; // Garante que o jogador não passe do chão
         jogador->no_chao = true; // O jogador está no chão
@@ -459,11 +722,34 @@ void pular(Jogador *jogador) {
     }
 }
 
-void desenhar_jogador(Jogador *jogador) {
-    al_draw_filled_rectangle(
-        jogador->x, jogador->y,
-        jogador->x + TAM_JOGADOR, jogador -> y + TAM_JOGADOR,
-        al_map_rgb(255, 128, 0)); // Cor laranja
+void desenhar_jogador(Jogador* jogador, ALLEGRO_BITMAP* sprite_sheet, float camera_x, int frame_counter) {
+    if (!jogador->ativo || !jogador->anim_sequencia_atual) return;
+
+    if (jogador->intangivel_timer > 0 && (frame_counter / 6) % 2 != 0) {
+        return;
+    }
+
+    // Pega os dados do frame atual, incluindo os offsets
+    Frame frame_atual = jogador->anim_sequencia_atual[jogador->anim_frame_atual];
+    float sx = frame_atual.x;
+    float sy = frame_atual.y;
+    float sw = frame_atual.w;
+    float sh = frame_atual.h;
+
+    float dest_w = sw * PLAYER_ESCALA;
+    float dest_h = sh * PLAYER_ESCALA;
+
+    // A posição final na tela é a posição do jogador MENOS o deslocamento do sprite
+    float draw_x = jogador->x;
+    float draw_y = jogador->y;
+
+    int flags = (jogador->direcao == -1) ? ALLEGRO_FLIP_HORIZONTAL : 0;
+
+    al_draw_scaled_bitmap(sprite_sheet,
+                             sx, sy, sw, sh, // Fonte: posição e tamanho do frame na spritesheet
+                             draw_x - camera_x, draw_y, // Destino: posição na tela
+                             dest_w, dest_h, // Tamanho final do sprite
+                             flags); // Flags de desenho (flip horizontal se necessário)
 }
 
 void desenhar_chefe(Chefe *chefe, float camera_x) {
@@ -532,7 +818,7 @@ void aplicar_dano_cuspes(Jogador *jogador, Cuspe cuspes[]) {
     }
 }
 
-int inicia_jogo(ALLEGRO_DISPLAY* disp, ALLEGRO_FONT* font, ALLEGRO_BITMAP* fundo) {
+int inicia_jogo(ALLEGRO_DISPLAY* disp, ALLEGRO_FONT* font, ALLEGRO_BITMAP* fundo, ALLEGRO_BITMAP* hp_sprite, ALLEGRO_BITMAP* caveira_sprite, ALLEGRO_BITMAP* sprite_dave) {
     al_init_primitives_addon();
     ALLEGRO_TIMER* timer = al_create_timer(1.0 / 60.0);
     ALLEGRO_EVENT_QUEUE* fila = al_create_event_queue();
@@ -548,8 +834,8 @@ int inicia_jogo(ALLEGRO_DISPLAY* disp, ALLEGRO_FONT* font, ALLEGRO_BITMAP* fundo
     chefe.y = ALTURA - ALTURA_CHAO - 150;
     chefe.hp_max = 1000;
     chefe.hp = chefe.hp_max;
-    chefe.dx = -1.0; // Velocidade inicial do chefe
-    chefe.timer_ataque_principal = 120; // Começa a atacar depois de 2 segundos
+    chefe.dx = -1.0;
+    chefe.timer_ataque_principal = 120;
     chefe.tiros_na_rajada = 0;
     chefe.timer_rajada = 0;
 
@@ -557,20 +843,33 @@ int inicia_jogo(ALLEGRO_DISPLAY* disp, ALLEGRO_FONT* font, ALLEGRO_BITMAP* fundo
     al_register_event_source(fila, al_get_display_event_source(disp));
     al_register_event_source(fila, al_get_timer_event_source(timer));
 
+    float altura_jogador_atual = anim_idle[0].h * PLAYER_ESCALA;
+
     Jogador jogador = {
         .x = LARGURA / 2, 
-        .y = ALTURA - ALTURA_CHAO - TAM_JOGADOR, 
+        .y = ALTURA - ALTURA_CHAO - altura_jogador_atual, 
         .dy = 0,
-        .no_chao = true,
+        .no_chao = true, 
         .direcao = 1, 
         .hp = 8, 
         .velocidade = 2.0, 
-        .intangivel_timer = 0
+        .intangivel_timer = 0, 
+        .ativo = true,
+        .municao =  30,
+        .estado_stamina = NORMAL, 
+        .timer_stamina = 0,
+        .anim_sequencia_atual = anim_idle, 
+        .num_frames_na_anim = num_frames_idle,
+        .anim_frame_atual = 0, 
+        .anim_timer = 0
     };
+
 
     Tiro tiros[MAX_TIROS] = {0};
     Inimigo inimigos[MAX_INIMIGOS] = {0};
     Cuspe cuspes[MAX_CUSPES] = {0};
+    ItemMunicao itens_municao[MAX_MUNICAO_ITENS] = {0};
+
     int frames_inimigo = 0;
     int zumbis_mortos = 0;
     bool teclas[ALLEGRO_KEY_MAX] = {false};
@@ -588,8 +887,8 @@ int inicia_jogo(ALLEGRO_DISPLAY* disp, ALLEGRO_FONT* font, ALLEGRO_BITMAP* fundo
             frame_counter++;
 
             //SE O JOGADOR MORREU
-            if (jogador.hp <= 0) {
-                al_rest(0.5);
+            if (!jogador.ativo || jogador.hp <= 0) {
+                al_rest(10.0);
                 tela_game_over(font, zumbis_mortos);
                 rodando = false;
             }
@@ -602,56 +901,53 @@ int inicia_jogo(ALLEGRO_DISPLAY* disp, ALLEGRO_FONT* font, ALLEGRO_BITMAP* fundo
             }
 
             if (jogador.intangivel_timer > 0) jogador.intangivel_timer--;
+
+            update_stamina_jogador(&jogador); 
+            float multiplicador_sprint = 1.0;
+            if (jogador.estado_stamina == CORRENDO) multiplicador_sprint = 2.0;
+            else if (jogador.estado_stamina == CANSADO) multiplicador_sprint = 1.0 / 3.0;
             
             aplicar_dano_jogador(&jogador, inimigos, MAX_INIMIGOS);
             aplicar_dano_cuspes(&jogador, cuspes);
 
-            float limite_esquerdo = 0;
+            float limite_esquerdo = (estado_atual == BATALHA_CHEFE) ? mundo_largura - LARGURA : 0;
             float limite_direito = mundo_largura - TAM_JOGADOR;
-
-            // Se estiver na arena do chefe, o limite esquerdo muda para travar o jogador na tela
-            if (estado_atual == BATALHA_CHEFE) {
-                limite_esquerdo = mundo_largura - LARGURA;
-            }
 
             // Aplica o movimento, respeitando os limites dinâmicos
             if (teclas[ALLEGRO_KEY_A] && jogador.x > limite_esquerdo) {
-                jogador.x -= VELOCIDADE_BASE * jogador.velocidade;
+                jogador.x -= VELOCIDADE_BASE * jogador.velocidade * multiplicador_sprint;
             } else if (teclas[ALLEGRO_KEY_D] && jogador.x < limite_direito) {
-                jogador.x += VELOCIDADE_BASE * jogador.velocidade;
-            }
-
-            // Garante que o jogador não fique preso fora dos limites
-            if (jogador.x < limite_esquerdo) {
-                jogador.x = limite_esquerdo;
-            }
-            if (jogador.x > limite_direito) {
-                jogador.x = limite_direito;
+                jogador.x += VELOCIDADE_BASE * jogador.velocidade * multiplicador_sprint;
             }
             
             if (estado_atual == FASE_NORMAL) {
                 camera_x = jogador.x - LARGURA / 2.0;
                 if (camera_x < 0) camera_x = 0;
                 if (camera_x > mundo_largura - LARGURA) camera_x = mundo_largura - LARGURA;
-            }
 
-             // Transição para a batalha do chefe
-            if (estado_atual == FASE_NORMAL && jogador.x > mundo_largura - LARGURA) {
-                estado_atual = BATALHA_CHEFE;
-                chefe.ativo = true;
-            }
-
-            // Trava a câmera na arena do chefe
-            if (estado_atual == BATALHA_CHEFE) {
+                if (jogador.x > mundo_largura - LARGURA) {
+                    estado_atual = BATALHA_CHEFE;
+                    chefe.ativo = true;
+                }
+            } else {
                 camera_x = mundo_largura - LARGURA;
             }
 
             update_jogador(&jogador);
+
+            bool esta_andando = (teclas[ALLEGRO_KEY_A] || teclas[ALLEGRO_KEY_D]);
+            atualiza_animacao_jogador(&jogador, esta_andando);
+
             update_tiros(tiros, MAX_TIROS, camera_x);
             update_cuspes(cuspes, MAX_CUSPES, camera_x);
-            update_inimigos(inimigos, tiros, cuspes, &jogador, &zumbis_mortos, camera_x);
-            update_chefe(&chefe, &jogador, tiros, cuspes, mundo_largura);
+            update_itens_municao(itens_municao);
+            update_inimigos(inimigos, tiros, cuspes, &jogador, &zumbis_mortos, camera_x, itens_municao);
+            
+            if(chefe.ativo){
+                update_chefe(&chefe, &jogador, tiros, cuspes, mundo_largura);
+            }
 
+            
             frames_inimigo++;
             //verifica a frequencia com base na fase do jogo
             int frequencia_inimigos = (estado_atual == BATALHA_CHEFE) ? 60 : 120;
@@ -661,41 +957,70 @@ int inicia_jogo(ALLEGRO_DISPLAY* disp, ALLEGRO_FONT* font, ALLEGRO_BITMAP* fundo
             }
             redesenhar = true;
         }
-        else if (ev.type == ALLEGRO_EVENT_DISPLAY_CLOSE) { // se o usuário fechar a janela
-            rodando = false;
-        }
-        else if (ev.type == ALLEGRO_EVENT_KEY_DOWN) { //logica de tiro para todos os lados
+
+        /*
+        ==========================
+        LOGICA DE INPUT DO TECLADO
+        ==========================
+        */
+        else if (ev.type == ALLEGRO_EVENT_DISPLAY_CLOSE) { rodando = false; }
+        
+        else if (ev.type == ALLEGRO_EVENT_KEY_DOWN) {
             teclas[ev.keyboard.keycode] = true;
             if (ev.keyboard.keycode == ALLEGRO_KEY_A) jogador.direcao = -1;
             else if (ev.keyboard.keycode == ALLEGRO_KEY_D) jogador.direcao = 1;
 
-            if (ev.keyboard.keycode == ALLEGRO_KEY_ESCAPE) rodando = false;
             if (ev.keyboard.keycode == ALLEGRO_KEY_W) pular(&jogador);
+            if (ev.keyboard.keycode == ALLEGRO_KEY_ESCAPE) rodando = false;
 
-            if (ev.keyboard.keycode == ALLEGRO_KEY_SPACE) {
-                const float VELOCIDADE_TIRO = 10.0;
-                float dir_x = 0, dir_y = 0;
-
-                if (teclas[ALLEGRO_KEY_W]) dir_y -= 1;
-                if (teclas[ALLEGRO_KEY_S]) dir_y += 1;
-                if (teclas[ALLEGRO_KEY_A]) dir_x -= 1;
-                if (teclas[ALLEGRO_KEY_D]) dir_x += 1;
-
-                if (dir_x == 0 && dir_y == 0) dir_x = jogador.direcao;
-
-                // Normaliza a direção do tiro
-                float magnitude = sqrt(dir_x * dir_x + dir_y * dir_y);
-                float vel_x = 0, vel_y = 0;
-
-                if (magnitude > 0) {
-                    vel_x = (dir_x / magnitude) * VELOCIDADE_TIRO;
-                    vel_y = (dir_y / magnitude) * VELOCIDADE_TIRO;
+            if (ev.keyboard.keycode == ALLEGRO_KEY_C && jogador.estado_stamina == NORMAL && (teclas[ALLEGRO_KEY_A] || teclas[ALLEGRO_KEY_D])) {
+                jogador.estado_stamina = CORRENDO;
+                jogador.timer_stamina = 8 * 60;
+            }
+            
+            if (ev.keyboard.keycode == ALLEGRO_KEY_R) {
+                for (int i = 0; i < MAX_MUNICAO_ITENS; i++) {
+                    if (itens_municao[i].ativo) {
+                        float dist_x = fabs(jogador.x - itens_municao[i].x);
+                        
+                        if(dist_x < TAM_JOGADOR) {
+                            jogador.municao += 18; // Adiciona 5 munições
+                            itens_municao[i].ativo = false; // Remove o item de munição
+                            printf("Munição coletada! Total: %d\n", jogador.municao);
+                            break;
+                        }
+                    }
                 }
-                
-                float tiro_x = jogador.x + TAM_JOGADOR / 2.0;
-                float tiro_y = jogador.y + TAM_JOGADOR / 2.0;
+            }
+            if (ev.keyboard.keycode == ALLEGRO_KEY_SPACE) {
+                if(jogador.municao > 0) {
+                    jogador.municao--;
+                    const float VELOCIDADE_TIRO = 10.0;
+                    float dir_x = 0, dir_y = 0;
 
-                disparar_tiro(tiros, tiro_x, tiro_y, vel_x, vel_y);
+                    if (teclas[ALLEGRO_KEY_W]) dir_y -= 1;
+                    if (teclas[ALLEGRO_KEY_S]) dir_y += 1;
+                    if (teclas[ALLEGRO_KEY_A]) dir_x -= 1;
+                    if (teclas[ALLEGRO_KEY_D]) dir_x += 1;
+
+                    if (dir_x == 0 && dir_y == 0) dir_x = jogador.direcao;
+
+                    // Normaliza a direção do tiro
+                    float magnitude = sqrt(dir_x * dir_x + dir_y * dir_y);
+                    float vel_x = 0, vel_y = 0;
+
+                    if (magnitude > 0) {
+                        vel_x = (dir_x / magnitude) * VELOCIDADE_TIRO;
+                        vel_y = (dir_y / magnitude) * VELOCIDADE_TIRO;
+                    }
+
+                    float tiro_x = jogador.x + TAM_JOGADOR / 2.0;
+                    float tiro_y = jogador.y + TAM_JOGADOR / 2.0;
+
+                    disparar_tiro(tiros, tiro_x, tiro_y, vel_x, vel_y);
+                }else{
+                    printf("Sem munição!\n");
+                }
             }
         }
         else if (ev.type == ALLEGRO_EVENT_KEY_UP) {
@@ -703,7 +1028,7 @@ int inicia_jogo(ALLEGRO_DISPLAY* disp, ALLEGRO_FONT* font, ALLEGRO_BITMAP* fundo
             if (ev.keyboard.keycode == ALLEGRO_KEY_A && teclas[ALLEGRO_KEY_D]) jogador.direcao = 1;
             else if (ev.keyboard.keycode == ALLEGRO_KEY_D && teclas[ALLEGRO_KEY_A]) jogador.direcao = -1;
         }
-
+    
         /*
         ========================
             LÓGICA DE DESENHO
@@ -712,11 +1037,7 @@ int inicia_jogo(ALLEGRO_DISPLAY* disp, ALLEGRO_FONT* font, ALLEGRO_BITMAP* fundo
         if (redesenhar && al_is_event_queue_empty(fila)) {
             al_draw_bitmap_region(fundo, camera_x, 0, LARGURA, ALTURA, 0, 0, 0);
 
-            if (!(jogador.intangivel_timer > 0 && (frame_counter / 6) % 2)) {
-                 al_draw_filled_rectangle(jogador.x - camera_x, jogador.y,
-                                          jogador.x - camera_x + TAM_JOGADOR, jogador.y + TAM_JOGADOR,
-                                          al_map_rgb(255, 140, 0));
-            }
+            desenhar_jogador(&jogador, sprite_dave, camera_x, frame_counter);
 
             desenhar_chefe(&chefe, camera_x);
             
@@ -729,18 +1050,13 @@ int inicia_jogo(ALLEGRO_DISPLAY* disp, ALLEGRO_FONT* font, ALLEGRO_BITMAP* fundo
                         cor = al_map_rgb(0, 255, 0); // Verde
                     }
 
-                    float brilho = (float)inimigos[i].hp / inimigos[i].hp_max;
-                    cor = al_map_rgb(0, 255 * brilho, 0);
-
                     al_draw_filled_circle(inimigos[i].x - camera_x, inimigos[i].y, TAM_INIMIGO, cor);
                 }
             }
 
-            for (int i = 0; i < MAX_TIROS; i++) {
-                if (tiros[i].ativo) {
-                    al_draw_filled_rectangle(tiros[i].x - camera_x, tiros[i].y,
-                                             tiros[i].x - camera_x + TAM_TIROS, tiros[i].y + 5,
-                                             al_map_rgb(255, 255, 0));
+            for (int i = 0; i < MAX_MUNICAO_ITENS; i++) {
+                if(itens_municao[i].ativo){
+                    al_draw_filled_rectangle(itens_municao[i].x - camera_x, itens_municao[i].y, itens_municao[i].x - camera_x + 15, itens_municao[i].y + 15, al_map_rgb(255, 255, 0));
                 }
             }
 
@@ -750,11 +1066,45 @@ int inicia_jogo(ALLEGRO_DISPLAY* disp, ALLEGRO_FONT* font, ALLEGRO_BITMAP* fundo
                 }
             }
 
-            for (int i = 0; i < jogador.hp; i++) {
-                al_draw_filled_circle(20 + (i * 15), 25, 5, al_map_rgb(255, 0, 0));
+            for (int i = 0; i < MAX_TIROS; i++) {
+                if (tiros[i].ativo) {
+                    al_draw_filled_rectangle(tiros[i].x - camera_x, tiros[i].y,
+                                             tiros[i].x - camera_x + TAM_TIROS, tiros[i].y + 5,
+                                             al_map_rgb(255, 255, 0)); // Cor amarela para o tiro
+                }
             }
+
+
+
+            int hp_largura = al_get_bitmap_width(hp_sprite);
+            for(int i = 0; i < jogador.hp; i++) {
+                al_draw_bitmap(hp_sprite, 10 + (i * (hp_largura + 5)), 10, 0);
+            }
+
+            desenha_barra_stamina(&jogador);
+
+            al_draw_textf(font, al_map_rgb(255, 255, 255), 10, 45, 0,
+                          "Municao: %d", jogador.municao);
+
+
+            const float tamanho_caveira = 40.0f; 
+
+            // 2. Pega as dimensões originais da imagem da caveira.
+            float sw = al_get_bitmap_width(caveira_sprite);
+            float sh = al_get_bitmap_height(caveira_sprite);
+
+            // 3. Desenha cada caveira usando o tamanho arbitrário.
             for (int i = 0; i < zumbis_mortos; i++) {
-                al_draw_filled_circle(LARGURA - 15 - (i * 15), 25, 5, al_map_rgb(255, 255, 255));
+                // Calcula a posição X para alinhar à direita
+                float draw_x = (LARGURA - 10 - tamanho_caveira) - (i * (tamanho_caveira + 5));
+                float draw_y = 10;
+
+                al_draw_scaled_bitmap(caveira_sprite, // A imagem da caveira
+                                      0, 0,           // Posição (x, y) do recorte (a imagem inteira)
+                                      sw, sh,         // Tamanho (largura, altura) do recorte (a imagem inteira)
+                                      draw_x, draw_y, // Posição (x, y) final na tela
+                                      tamanho_caveira, tamanho_caveira, // Usa o nosso tamanho arbitrário
+                                      0);             // Flags (sem espelhamento)
             }
 
             al_flip_display();
@@ -781,8 +1131,9 @@ int inicia_instrucoes(ALLEGRO_DISPLAY* disp) {
     return 0;
 }
 
-int main() 
+int main()
 {
+    // --- 1. INICIALIZAÇÃO DO ALLEGRO ---
     al_init();
     al_install_keyboard();
     al_init_image_addon();
@@ -790,75 +1141,79 @@ int main()
     al_init_ttf_addon();
     al_init_primitives_addon();
 
-    ALLEGRO_TIMER* timer = al_create_timer(1.0 / 30.0);
-    ALLEGRO_EVENT_QUEUE* queue = al_create_event_queue();
     ALLEGRO_DISPLAY* disp = al_create_display(LARGURA, ALTURA);
-    ALLEGRO_BITMAP* fundo_menu = al_load_bitmap("orig_big.png");
-    ALLEGRO_BITMAP* fundo_jogo = al_load_bitmap("fundo.png");
-    ALLEGRO_FONT* font = al_load_ttf_font("font.ttf", 40, 0);
-    
-    if (!disp || !fundo_menu || !font || !timer || !queue) {
-        if (!disp) fprintf(stderr, "Falha ao criar a janela.\n");
-        if (!fundo_menu) fprintf(stderr, "Falha ao carregar a imagem de fundo_menu.\n");
-        if (!font) fprintf(stderr, "Falha ao carregar a fonte.\n");
-        if (!timer) fprintf(stderr, "Falha ao criar o timer.\n");
-        if (!queue) fprintf(stderr, "Falha ao criar a fila de eventos.\n");
-        fprintf(stderr, "Falha ao inicializar Allegro ou carregar recursos.\n");
+    ALLEGRO_EVENT_QUEUE* queue = al_create_event_queue();
+
+    // --- 2. CARREGAMENTO DOS ASSETS ---
+    Assets assets;
+    assets.fundo = al_load_bitmap("fundo.png");
+    assets.font = al_load_ttf_font("font.ttf", 40, 0);
+    assets.hp_sprite = al_load_bitmap("HP_sprites.png");
+    assets.caveira_sprite = al_load_bitmap("caveira.png");
+    assets.player_sprite = al_load_bitmap("sprite_dave.png");
+
+    // Adicione verificações de erro para todos os assets aqui!
+    if (!assets.player_sprite) { 
+        fprintf(stderr, "Erro ao carregar sprite do jogador.\n");
         return -1;
     }
 
+    if (!assets.fundo) {
+        fprintf(stderr, "Erro ao carregar fundo.\n");
+        return -1;
+    }
+
+    if (!assets.font) {
+        fprintf(stderr, "Erro ao carregar fonte.\n");
+        return -1;
+    }
+
+    if (!assets.hp_sprite) {
+        fprintf(stderr, "Erro ao carregar sprite de HP.\n");
+        return -1;
+    }
+
+    if (!assets.caveira_sprite) {
+        fprintf(stderr, "Erro ao carregar sprite de caveira.\n");
+        return -1;
+    }
+
+
+
+    // --- 3. REGISTRO DE FONTES DE EVENTOS ---
     al_register_event_source(queue, al_get_keyboard_event_source());
     al_register_event_source(queue, al_get_display_event_source(disp));
-    al_register_event_source(queue, al_get_timer_event_source(timer));
 
-    ALLEGRO_EVENT event;
-    int opcao_selecionada = 0;
-    const char* opcoes[OPCOES] = {"JOGAR", "CONFIGURAÇÕES", "INSTRUÇÕES"};
+    // --- 4. LOOP PRINCIPAL DO JOGO ---
+    bool jogando = true;
+    while (jogando) {
+        // Chama o loop do menu e espera uma escolha
+        int escolha = loop_do_menu(queue, &assets);
 
-    al_start_timer(timer);
-
-    while (1) {
-        al_wait_for_event(queue, &event);
-        
-        
-        if (event.type == ALLEGRO_EVENT_DISPLAY_CLOSE) {
-            break;
-        }
-
-        else if (event.type == ALLEGRO_EVENT_KEY_DOWN) {
-            if (event.keyboard.keycode == ALLEGRO_KEY_UP) {
-                opcao_selecionada = (opcao_selecionada - 1 + OPCOES) % OPCOES;
-            } else if (event.keyboard.keycode == ALLEGRO_KEY_DOWN) {
-                opcao_selecionada = (opcao_selecionada + 1) % OPCOES;
-            } else if (event.keyboard.keycode == ALLEGRO_KEY_ENTER) {
-                if (opcao_selecionada == 0) {
-                    inicia_jogo(disp, font, fundo_jogo);
-                } else if (opcao_selecionada == 1) {
-                    inicia_configuracoes(disp);
-                } else if (opcao_selecionada == 2) {
-                    inicia_instrucoes(disp);
-                }
-            }
-        }
-
-        else if (event.type == ALLEGRO_EVENT_TIMER) {
-            al_draw_bitmap(fundo_menu, 0, 0, 0);
-
-            for (int i = 0; i < OPCOES; i++) {
-                ALLEGRO_COLOR cor = (i == opcao_selecionada) ? al_map_rgb(255, 0, 0) : al_map_rgb(0, 0, 0);
-                al_draw_text(font, cor, 400, 200 + i * 60, ALLEGRO_ALIGN_CENTER, opcoes[i]);
-            }
-
-            al_flip_display();
+        switch (escolha) {
+            case 0: // JOGAR
+                // Chama a função principal do jogo
+                inicia_jogo(disp, assets.font, assets.fundo, assets.hp_sprite, assets.caveira_sprite, assets.player_sprite);
+                break;
+            case 1: // CONFIGURAÇÕES
+                // (Função de configurações pode ser adicionada aqui no futuro)
+                printf("Opcao de configuracoes ainda nao implementada.\n");
+                al_rest(1.0); // Pausa para o usuário ver a mensagem
+                break;
+            case 2: // SAIR
+                jogando = false;
+                break;
         }
     }
 
-    al_destroy_font(font);
-    al_destroy_bitmap(fundo_menu);
-    al_destroy_timer(timer);
-    al_destroy_event_queue(queue);
+    // --- 5. LIMPEZA DE RECURSOS ---
+    al_destroy_font(assets.font);
+    al_destroy_bitmap(assets.fundo);
+    al_destroy_bitmap(assets.hp_sprite);
+    al_destroy_bitmap(assets.caveira_sprite);
+    al_destroy_bitmap(assets.player_sprite);
     al_destroy_display(disp);
+    al_destroy_event_queue(queue);
 
     return 0;
 }
-
