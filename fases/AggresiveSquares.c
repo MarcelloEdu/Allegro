@@ -61,6 +61,9 @@ typedef struct {
     int    num_frames_na_anim;   // Quantos frames tem a animação atual
     int    anim_frame_atual;     // Índice do frame atual (0, 1, 2...)
     int    anim_timer;           // Timer para controlar a velocidade
+    int    timer_anim_tiro;     // Timer para controlar a animação do tiro
+    int    timer_anim_reload; // Timer para controlar a animação de recarga
+    int    timer_anim_morte;       
 } Jogador;
 
 typedef struct {float x, y, dx, dy; bool ativo; } Tiro;
@@ -145,67 +148,100 @@ Frame anim_pulo[MAX_FRAMES_POR_ANIM] = {
     {53 + 7 * 129 ,444 ,41 ,65}   // Frame 8
 };
 
+Frame anim_dano[MAX_FRAMES_POR_ANIM] = {
+    // {x, y, w, h)
+    {43, 575, 41, 65},  // Frame 1
+    {43 + 1 * 129, 575, 41, 65}, // Frame 2
+};
+
 Frame anim_tiro[MAX_FRAMES_POR_ANIM] = {
     // {x, y, w, h)
-    {0, 699, 41, 65},  // Frame 1
-    {10, 699, 50, 65}, // Frame 2
-    {20, 699, 104, 65}, // Frame 3
-    {30, 699, 104, 65}, // Frame 4
-    {40, 699, 104, 65}, // Frame 5
-    {50, 699, 104, 65},   // Frame 6
-    {60, 699, 41, 65}, // Frame 7
-    {70, 699, 41, 65}, // Frame 8
-    {80, 699, 41, 65}, // Frame 9
-    {90, 699, 41, 65},   // Frame 10
-    {100, 699, 41, 65},  // Frame 11
-    {110, 699, 41, 65} // Frame 12
+    {21, 699, 41, 65},  // Frame 1
+    {21 +1 * 127, 699, 50, 65}, // Frame 2
+    {21 +2 * 127, 699, 104, 65}, // Frame 3
+    {21 +3 * 127, 699, 104, 65}, // Frame 4
+    {21 +4 * 127, 699, 104, 65}, // Frame 5
+    {21 +5 * 127, 699, 104, 65},   // Frame 6
+    {21 +6 * 127, 699, 41, 65}, // Frame 7
+    {21 +7 * 127, 699, 41, 65}, // Frame 8
+    {21 +8 * 127, 699, 41, 65}, // Frame 9
+    {21 +9 * 127, 699, 41, 65},   // Frame 10
+    {21 +10 * 127, 699, 41, 65},  // Frame 11
+    {21 +12 * 127, 699, 41, 65} // Frame 12
 };
 
 Frame anim_reload[MAX_FRAMES_POR_ANIM] = {
     // {x, y, w, h)
-    {0, 828, 41, 65},  // Frame 1
-    {10, 828, 41, 65}, // Frame 2
-    {20, 828, 41, 65}, // Frame 3
-    {30, 828, 41, 65}, // Frame 4
-    {40, 828, 41, 65}, // Frame 5
-    {50, 828, 41, 65}, // Frame 6
-    {60, 828, 41, 65}, // Frame 7
-    {70, 828, 41, 65}, // Frame 8
-    {80, 828, 41, 65}, // Frame 9
-    {90, 828, 41, 65}, // Frame 10
-    {100, 828, 41, 65}, // Frame 11
-    {110, 828, 41, 65} // Frame 12
+    {43, 828, 41, 65},  // Frame 1
+    {43 + 1 * 128, 828, 41, 65}, // Frame 2
+    {43 + 2 * 128, 828, 41, 65}, // Frame 3
+    {43 + 3 * 128, 828, 41, 65}, // Frame 4
+    {43 + 4 * 128, 828, 41, 65}, // Frame 5
+    {43 + 5 * 128, 828, 41, 65}, // Frame 6
+    {43 + 6 * 128, 828, 41, 65}, // Frame 7
+    {43 + 7 * 128, 828, 41, 65}, // Frame 8
+    {43 + 8 * 128, 828, 41, 65}, // Frame 9
+    {43 + 9 * 128, 828, 41, 65}, // Frame 10
+    {43 + 10 * 128, 828, 41, 65}, // Frame 11
+    {43 + 11 * 128, 828, 41, 65} // Frame 12
 };
 
 Frame anim_morte[MAX_FRAMES_POR_ANIM] = {
     // {x, y, w, h)
-    {0, 1210, 50, 65},  // Frame 1
-    {10, 1210, 50, 65}, // Frame 2
-    {20, 1210, 59, 65}, // Frame 3
-    {30, 1210, 81, 65} // Frame 4
+    {48, 1219, 48, 65},  // Frame 1
+    {48 + 1 * 128, 1219, 52, 62}, // Frame 2
+    {48 + 2 * 128, 1219, 41, 54}, // Frame 3
+    {48 + 3 * 128, 1219, 82, 19} // Frame 4
 };
 
 int num_frames_idle = 6;
 int num_frames_andando = 8;
 int num_frames_correndo = 8;
 int num_frames_pulo = 9;
+int num_frames_dano = 2;
 int num_frames_tiro = 12;
 int num_frames_reload = 12;
 int num_frames_morte = 4;
 
 void atualiza_animacao_jogador(Jogador* jogador, bool esta_andando) {
-    // Ponteiros para as animações definidas globalmente
     Frame* proxima_anim = anim_idle;
     int    proximo_num_frames = num_frames_idle;
+    bool   animacao_loop = true; // A maioria das animações se repete
 
-    // Decide qual será a próxima animação
-    if (!jogador->no_chao) {
+    // --- LÓGICA DE ANIMAÇÃO FINAL COM MORTE ---
+    if (!jogador->ativo) {
+        // 1. Prioridade máxima absoluta: Morte
+        proxima_anim = anim_morte;
+        proximo_num_frames = num_frames_morte;
+        animacao_loop = false; // A animação de morte não se repete
+    }
+    else if (jogador->timer_anim_tiro > 0) {
+        // 2. Tiro
+        proxima_anim = anim_tiro;
+        proximo_num_frames = num_frames_tiro;
+    }
+    else if (jogador->timer_anim_reload > 0) {
+        // 3. Recarga
+        proxima_anim = anim_reload;
+        proximo_num_frames = num_frames_reload;
+    }
+    else if (!jogador->no_chao) {
+        // 4. Pulo
         proxima_anim = anim_pulo;
-        proximo_num_frames = num_frames_andando;
-    } else if (esta_andando) {
+        proximo_num_frames = num_frames_pulo;
+    }
+    else if (jogador->estado_stamina == CORRENDO && esta_andando) {
+        // 5. Correndo
+        proxima_anim = anim_correndo;
+        proximo_num_frames = num_frames_correndo;
+    }
+    else if (esta_andando) {
+        // 6. Andando
         proxima_anim = anim_andando;
         proximo_num_frames = num_frames_andando;
-    } else {
+    }
+    else {
+        // 7. Parado
         proxima_anim = anim_idle;
         proximo_num_frames = num_frames_idle;
     }
@@ -219,11 +255,22 @@ void atualiza_animacao_jogador(Jogador* jogador, bool esta_andando) {
     }
 
     // Avança o frame da animação baseado no timer
-    const int velocidade_anim = 8;
+    int velocidade_anim = 8;
+    if (jogador->anim_sequencia_atual == anim_tiro || jogador->anim_sequencia_atual == anim_reload) {
+        velocidade_anim = 5;
+    }
+
     jogador->anim_timer++;
     if (jogador->anim_timer >= velocidade_anim) {
         jogador->anim_timer = 0;
-        jogador->anim_frame_atual = (jogador->anim_frame_atual + 1) % jogador->num_frames_na_anim;
+        // Se a animação pode dar loop, avança normalmente
+        if (animacao_loop) {
+            jogador->anim_frame_atual = (jogador->anim_frame_atual + 1) % jogador->num_frames_na_anim;
+        } 
+        // Se não pode dar loop, avança até o último quadro e para
+        else if (jogador->anim_frame_atual < jogador->num_frames_na_anim - 1) {
+            jogador->anim_frame_atual++;
+        }
     }
 }
 
@@ -723,9 +770,9 @@ void pular(Jogador *jogador) {
 }
 
 void desenhar_jogador(Jogador* jogador, ALLEGRO_BITMAP* sprite_sheet, float camera_x, int frame_counter) {
-    if (!jogador->ativo || !jogador->anim_sequencia_atual) return;
+    if (!jogador->anim_sequencia_atual) return;
 
-    if (jogador->intangivel_timer > 0 && (frame_counter / 6) % 2 != 0) {
+    if (jogador->intangivel_timer > 0 && jogador->ativo && (frame_counter / 6) % 2 != 0) {
         return;
     }
 
@@ -861,7 +908,10 @@ int inicia_jogo(ALLEGRO_DISPLAY* disp, ALLEGRO_FONT* font, ALLEGRO_BITMAP* fundo
         .anim_sequencia_atual = anim_idle, 
         .num_frames_na_anim = num_frames_idle,
         .anim_frame_atual = 0, 
-        .anim_timer = 0
+        .anim_timer = 0,
+        .timer_anim_tiro = 0,
+        .timer_anim_reload = 0,
+        .timer_anim_morte = -1,
     };
 
 
@@ -886,9 +936,24 @@ int inicia_jogo(ALLEGRO_DISPLAY* disp, ALLEGRO_FONT* font, ALLEGRO_BITMAP* fundo
         if (ev.type == ALLEGRO_EVENT_TIMER) {
             frame_counter++;
 
-            //SE O JOGADOR MORREU
-            if (!jogador.ativo || jogador.hp <= 0) {
-                al_rest(10.0);
+            if (jogador.timer_anim_tiro > 0) jogador.timer_anim_tiro--;
+
+            if (jogador.timer_anim_reload > 0)jogador.timer_anim_reload--;
+    
+
+            // Se a vida do jogador chegou a zero e ele ainda estava ativo...
+            if (jogador.hp <= 0 && jogador.ativo) {
+                jogador.ativo = false; // Desativa o jogador (para input e movimento)
+                jogador.timer_anim_morte = 120; // Define um timer de 2 segundos para a tela de Game Over
+            }
+
+            // Se o jogador está morto, decrementa o timer de Game Over
+            if (!jogador.ativo && jogador.timer_anim_morte > 0) {
+                jogador.timer_anim_morte--;
+            }
+
+            // Se o timer de Game Over chegou a zero, mostra a tela e sai
+            if (jogador.timer_anim_morte == 0) {
                 tela_game_over(font, zumbis_mortos);
                 rodando = false;
             }
@@ -900,26 +965,35 @@ int inicia_jogo(ALLEGRO_DISPLAY* disp, ALLEGRO_FONT* font, ALLEGRO_BITMAP* fundo
                 rodando = false;
             }
 
-            if (jogador.intangivel_timer > 0) jogador.intangivel_timer--;
+            if(jogador.ativo){
+                if (jogador.intangivel_timer > 0) jogador.intangivel_timer--;
 
-            update_stamina_jogador(&jogador); 
-            float multiplicador_sprint = 1.0;
-            if (jogador.estado_stamina == CORRENDO) multiplicador_sprint = 2.0;
-            else if (jogador.estado_stamina == CANSADO) multiplicador_sprint = 1.0 / 3.0;
-            
-            aplicar_dano_jogador(&jogador, inimigos, MAX_INIMIGOS);
-            aplicar_dano_cuspes(&jogador, cuspes);
+                update_stamina_jogador(&jogador); 
+                float multiplicador_sprint = 1.0;
+                if (jogador.estado_stamina == CORRENDO) multiplicador_sprint = 2.0;
+                else if (jogador.estado_stamina == CANSADO) multiplicador_sprint = 1.0 / 3.0;
+                
+                aplicar_dano_jogador(&jogador, inimigos, MAX_INIMIGOS);
+                aplicar_dano_cuspes(&jogador, cuspes);
 
-            float limite_esquerdo = (estado_atual == BATALHA_CHEFE) ? mundo_largura - LARGURA : 0;
-            float limite_direito = mundo_largura - TAM_JOGADOR;
+                float limite_esquerdo = (estado_atual == BATALHA_CHEFE) ? mundo_largura - LARGURA : 0;
+                float limite_direito = mundo_largura - TAM_JOGADOR;
 
-            // Aplica o movimento, respeitando os limites dinâmicos
-            if (teclas[ALLEGRO_KEY_A] && jogador.x > limite_esquerdo) {
-                jogador.x -= VELOCIDADE_BASE * jogador.velocidade * multiplicador_sprint;
-            } else if (teclas[ALLEGRO_KEY_D] && jogador.x < limite_direito) {
-                jogador.x += VELOCIDADE_BASE * jogador.velocidade * multiplicador_sprint;
+                float velocidade_final = VELOCIDADE_BASE * jogador.velocidade * multiplicador_sprint;
+                if (teclas[ALLEGRO_KEY_A] && jogador.x > limite_esquerdo) {
+                    jogador.x -= velocidade_final;
+                } else if (teclas[ALLEGRO_KEY_D] && jogador.x < limite_direito) {
+                    jogador.x += velocidade_final;
+                }
             }
-            
+
+            bool esta_andando = (teclas[ALLEGRO_KEY_A] || teclas[ALLEGRO_KEY_D]);
+            atualiza_animacao_jogador(&jogador, esta_andando);
+
+            // Atualiza a física do jogador
+            update_jogador(&jogador);
+
+            // Atualiza a câmera
             if (estado_atual == FASE_NORMAL) {
                 camera_x = jogador.x - LARGURA / 2.0;
                 if (camera_x < 0) camera_x = 0;
@@ -933,11 +1007,6 @@ int inicia_jogo(ALLEGRO_DISPLAY* disp, ALLEGRO_FONT* font, ALLEGRO_BITMAP* fundo
                 camera_x = mundo_largura - LARGURA;
             }
 
-            update_jogador(&jogador);
-
-            bool esta_andando = (teclas[ALLEGRO_KEY_A] || teclas[ALLEGRO_KEY_D]);
-            atualiza_animacao_jogador(&jogador, esta_andando);
-
             update_tiros(tiros, MAX_TIROS, camera_x);
             update_cuspes(cuspes, MAX_CUSPES, camera_x);
             update_itens_municao(itens_municao);
@@ -947,17 +1016,15 @@ int inicia_jogo(ALLEGRO_DISPLAY* disp, ALLEGRO_FONT* font, ALLEGRO_BITMAP* fundo
                 update_chefe(&chefe, &jogador, tiros, cuspes, mundo_largura);
             }
 
-            
-            frames_inimigo++;
             //verifica a frequencia com base na fase do jogo
             int frequencia_inimigos = (estado_atual == BATALHA_CHEFE) ? 60 : 120;
-            if (frames_inimigo >= frequencia_inimigos) {
+            if (++frames_inimigo >= frequencia_inimigos) {
                 gerar_inimigo(inimigos, MAX_INIMIGOS, camera_x);
                 frames_inimigo = 0;
             }
-            redesenhar = true;
-        }
 
+            redesenhar = true; // Marca que precisa redesenhar a tela
+        }
         /*
         ==========================
         LOGICA DE INPUT DO TECLADO
@@ -983,9 +1050,15 @@ int inicia_jogo(ALLEGRO_DISPLAY* disp, ALLEGRO_FONT* font, ALLEGRO_BITMAP* fundo
                     if (itens_municao[i].ativo) {
                         float dist_x = fabs(jogador.x - itens_municao[i].x);
                         
+
+
                         if(dist_x < TAM_JOGADOR) {
                             jogador.municao += 18; // Adiciona 5 munições
                             itens_municao[i].ativo = false; // Remove o item de munição
+
+                            jogador.timer_anim_reload = 60; // Tempo de recarga
+                            jogador.anim_frame_atual = 0; // Reseta o frame da animação de recarga                            
+
                             printf("Munição coletada! Total: %d\n", jogador.municao);
                             break;
                         }
@@ -995,6 +1068,10 @@ int inicia_jogo(ALLEGRO_DISPLAY* disp, ALLEGRO_FONT* font, ALLEGRO_BITMAP* fundo
             if (ev.keyboard.keycode == ALLEGRO_KEY_SPACE) {
                 if(jogador.municao > 0) {
                     jogador.municao--;
+
+                    jogador.timer_anim_tiro = 10;
+                    jogador.anim_frame_atual = 0;
+
                     const float VELOCIDADE_TIRO = 10.0;
                     float dir_x = 0, dir_y = 0;
 
