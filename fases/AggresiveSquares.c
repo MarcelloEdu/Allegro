@@ -11,8 +11,8 @@
 // 1. DEFINIÇÕES GLOBAIS (TIPOS E CONSTANTES)
 // ==========================================================================
 
-#define LARGURA 1680
-#define ALTURA 1050
+#define LARGURA 1280
+#define ALTURA 720
 #define TAM_JOGADOR 50
 #define PLAYER_ESCALA 1.0
 #define ALTURA_CHAO 50
@@ -1369,7 +1369,11 @@ int inicia_jogo(ALLEGRO_DISPLAY* disp, Assets* assets) {
         ========================
         */
         if (redesenhar && al_is_event_queue_empty(fila)) {
-            al_draw_bitmap_region(assets->fundo, camera_x, 0, LARGURA, ALTURA, 0, 0, 0);
+
+            al_set_target_backbuffer(disp);
+            al_clear_to_color(al_map_rgb(0, 0, 0));
+
+            al_draw_bitmap_region(assets->fundo, camera_x, 360, LARGURA, ALTURA, 0, 0, 0);
 
             desenhar_jogador(&jogador, assets->player_sprite, camera_x, frame_counter);
 
