@@ -33,12 +33,17 @@ typedef enum { FASE_NORMAL, BATALHA_CHEFE } EstadoDaFase;
 typedef enum { ZUMBI_ANDARILHO, ZUMBI_CUSPIDOR } TipoInimigo;
 typedef enum { NORMAL, CORRENDO, CANSADO, COOLDOWN } EstadoStamina;
 
+// Struct para agrupar todos os recursos carregados
 typedef struct {
     ALLEGRO_BITMAP* fundo;
     ALLEGRO_BITMAP* hp_sprite;
     ALLEGRO_BITMAP* caveira_sprite;
     ALLEGRO_BITMAP* player_sprite;
     ALLEGRO_FONT* font;
+
+    // --- CAMPOS CORRIGIDOS E ADICIONADOS ---
+    ALLEGRO_BITMAP* zumbi_cuspidor_sprite;
+    ALLEGRO_BITMAP* zumbi_sprites[3]; // Um array para os 4 tipos de zumbis normais
 } Assets;
 
 // Struct para definir um único quadro de uma spritesheet
@@ -84,15 +89,16 @@ typedef struct {
 } Chefe;
 
 typedef struct {
-    float x, y;
-    float dx, dy;
-    bool ativo;
-    bool no_chao;
+    float x, y, dx, dy;
+    bool ativo, no_chao, morrendo;
+    TipoInimigo tipo;
+    int hp, hp_max, timer_ataque, timer_anim_dano;
+    int direcao;
 
-    TipoInimigo tipo;       // Identifica o tipo de zumbi
-    int hp;                 // Pontos de vida atuais
-    int hp_max;             // Pontos de vida máximos
-    int timer_ataque;       // Cooldown para o próximo ataque
+    // --- CAMPOS DE ANIMAÇÃO SIMPLIFICADOS ---
+    int sprite_index;       // Qual dos 4 zumbis ele é (0 a 3)
+    int anim_frame_atual;   // Em qual quadro da animação ele está
+    int anim_timer;         // Timer de velocidade da animação
 } Inimigo;
 
 /*===========================*/
@@ -100,8 +106,6 @@ typedef struct {
 /*============================*/
 
 
-
-// --- Animações ---
 Frame anim_idle[MAX_FRAMES_POR_ANIM] = {
     // {x, y, w, h)
     {48, 63, 41, 65},  // Frame 1
@@ -273,6 +277,185 @@ void atualiza_animacao_jogador(Jogador* jogador, bool esta_andando) {
         }
     }
 }
+
+/*==============*/
+/*DADOS ANIMAÇÃO ZUMBI ANDARILHO*/
+/*==============*/
+
+// Struct para agrupar todas as animações de UM TIPO de zumbi
+typedef struct {
+    Frame andar[MAX_FRAMES_POR_ANIM];
+    int num_frames_andar;
+
+    Frame ataque[MAX_FRAMES_POR_ANIM];
+    int num_frames_ataque;
+
+    Frame dano[MAX_FRAMES_POR_ANIM];
+    int num_frames_dano;
+
+    Frame morte[MAX_FRAMES_POR_ANIM];
+    int num_frames_morte;
+} ZumbiAnimSet;
+
+ZumbiAnimSet animacoes_zumbis[3];
+
+void inicializa_dados_animacao_zumbis() {
+
+    // --- ZUMBI 1 (sprites_z1.png) ---
+    // Preencha com os dados exatos do primeiro zumbi
+    animacoes_zumbis[0].num_frames_andar = 10;
+    animacoes_zumbis[0].andar[0] = (Frame){47, 62, 46, 66};
+    animacoes_zumbis[0].andar[1] = (Frame){177, 61, 46, 67};
+    animacoes_zumbis[0].andar[2] = (Frame){302, 61, 46, 67};
+    animacoes_zumbis[0].andar[3] = (Frame){426, 62, 46, 65};
+    animacoes_zumbis[0].andar[4] = (Frame){554, 62, 46, 67};
+    animacoes_zumbis[0].andar[5] = (Frame){686, 62, 46, 67};
+    animacoes_zumbis[0].andar[6] = (Frame){813, 63, 46, 65};
+    animacoes_zumbis[0].andar[7] = (Frame){945, 63, 46, 65};
+    animacoes_zumbis[0].andar[8] = (Frame){1071, 63, 46, 65};
+    animacoes_zumbis[0].andar[9] = (Frame){1197, 62, 46, 66};
+
+    animacoes_zumbis[0].num_frames_ataque = 5;
+    animacoes_zumbis[0].ataque[0] = (Frame){43, 189, 49, 67}; // Frame de ataque
+    animacoes_zumbis[0].ataque[1] = (Frame){169, 189, 49, 67};
+    animacoes_zumbis[0].ataque[2] = (Frame){299, 189, 49, 67};
+    animacoes_zumbis[0].ataque[3] = (Frame){430, 189, 49, 65};
+    animacoes_zumbis[0].ataque[4] = (Frame){559, 189, 49, 65};
+
+    animacoes_zumbis[0].num_frames_dano = 4;
+    animacoes_zumbis[0].dano[0] = (Frame){40, 317, 50, 67}; // Frame de dano
+    animacoes_zumbis[0].dano[1] = (Frame){167, 317, 50, 67};
+    animacoes_zumbis[0].dano[2] = (Frame){292, 317, 50, 67};
+    animacoes_zumbis[0].dano[3] = (Frame){413, 317, 50, 67};
+
+    animacoes_zumbis[0].num_frames_morte = 5;
+    animacoes_zumbis[0].morte[0] = (Frame){50, 447, 64, 67}; // Frame de morte
+    animacoes_zumbis[0].morte[1] = (Frame){180, 453, 64, 67};
+    animacoes_zumbis[0].morte[2] = (Frame){302, 447, 64, 67};
+    animacoes_zumbis[0].morte[3] = (Frame){437, 482, 64, 67};
+    animacoes_zumbis[0].morte[4] = (Frame){565, 503, 64, 67};
+
+
+    // --- ZUMBI 2 (sprites_z2.png) ---
+    animacoes_zumbis[1].num_frames_andar = 12; // Este pode ter menos frames
+    animacoes_zumbis[1].andar[0] = (Frame){39, 60, 45, 68}; // Posição e tamanho diferentes
+    animacoes_zumbis[1].andar[1] = (Frame){165, 61, 46, 67};
+    animacoes_zumbis[1].andar[2] = (Frame){297, 60, 44, 68};
+    animacoes_zumbis[1].andar[3] = (Frame){428, 60, 40, 68};
+    animacoes_zumbis[1].andar[4] = (Frame){557, 60, 40, 68};
+    animacoes_zumbis[1].andar[5] = (Frame){680, 60, 48, 68};
+    animacoes_zumbis[1].andar[6] = (Frame){806, 59, 52, 69};
+    animacoes_zumbis[1].andar[7] = (Frame){936, 59, 49, 69};
+    animacoes_zumbis[1].andar[8] = (Frame){1065, 59, 44, 69};
+    animacoes_zumbis[1].andar[9] = (Frame){1191, 60, 47, 68};
+    animacoes_zumbis[1].andar[10] = (Frame){1320, 60, 48, 69};
+    animacoes_zumbis[1].andar[11] = (Frame){1447, 60, 49, 68};
+    
+
+    animacoes_zumbis[1].num_frames_ataque = 10;
+    animacoes_zumbis[1].ataque[0] = (Frame){39, 190, 50, 77}; // Frame de ataque
+    animacoes_zumbis[1].ataque[1] = (Frame){163, 189, 50, 77};
+    animacoes_zumbis[1].ataque[2] = (Frame){287, 190, 50, 77};
+    animacoes_zumbis[1].ataque[3] = (Frame){423, 179, 50, 77};
+    animacoes_zumbis[1].ataque[4] = (Frame){549, 181, 50, 77};
+    animacoes_zumbis[1].ataque[5] = (Frame){685, 184, 50, 72};
+    animacoes_zumbis[1].ataque[6] = (Frame){812, 191, 51, 77};
+    animacoes_zumbis[1].ataque[7] = (Frame){942, 190, 50, 77};
+    animacoes_zumbis[1].ataque[8] = (Frame){1069, 191, 50, 77};
+    animacoes_zumbis[1].ataque[9] = (Frame){1198, 191, 50, 77};
+    
+    
+    animacoes_zumbis[1].num_frames_dano = 4;
+    animacoes_zumbis[1].dano[0] = (Frame){48, 318, 38, 66}; // Frame de dano
+    animacoes_zumbis[1].dano[1] = (Frame){175, 317, 38, 67};
+    animacoes_zumbis[1].dano[2] = (Frame){303, 318, 38, 66};
+    animacoes_zumbis[1].dano[3] = (Frame){431, 318, 41, 67};
+
+
+    animacoes_zumbis[1].num_frames_morte = 5;
+    animacoes_zumbis[1].morte[0] = (Frame){46, 451, 80, 61}; // Frame de morte
+    animacoes_zumbis[1].morte[1] = (Frame){168, 457, 80, 61};
+    animacoes_zumbis[1].morte[2] = (Frame){295, 472, 80, 61};
+    animacoes_zumbis[1].morte[3] = (Frame){410, 492, 80, 61};
+    animacoes_zumbis[1].morte[4] = (Frame){536, 494, 80, 61};
+
+
+
+    // --- ZUMBI 3 (sprites_z3.png) ---
+
+    animacoes_zumbis[2].num_frames_andar = 10;
+    animacoes_zumbis[2].andar[0] = (Frame){44, 63, 60, 65}; // Posição e tamanho diferentes
+    animacoes_zumbis[2].andar[1] = (Frame){173, 64, 60, 65};
+    animacoes_zumbis[2].andar[2] = (Frame){295, 64, 60, 65};
+    animacoes_zumbis[2].andar[3] = (Frame){422, 65, 60, 65};
+    animacoes_zumbis[2].andar[4] = (Frame){554, 64, 60, 65};
+    animacoes_zumbis[2].andar[5] = (Frame){687, 63, 60, 65};
+    animacoes_zumbis[2].andar[6] = (Frame){814, 64, 60, 65};
+    animacoes_zumbis[2].andar[7] = (Frame){934, 65, 60, 65};
+    animacoes_zumbis[2].andar[8] = (Frame){1063, 65, 60, 65};
+    animacoes_zumbis[2].andar[9] = (Frame){1193, 64, 60, 65};
+
+    animacoes_zumbis[2].num_frames_ataque = 5;
+    animacoes_zumbis[2].ataque[0] = (Frame){42, 188, 56, 74}; // Frame de ataque
+    animacoes_zumbis[2].ataque[1] = (Frame){165, 185, 56, 74};
+    animacoes_zumbis[2].ataque[2] = (Frame){296, 182, 56, 74};
+    animacoes_zumbis[2].ataque[3] = (Frame){432, 187, 56, 74};
+    animacoes_zumbis[2].ataque[4] = (Frame){560, 190, 56, 74};
+
+    animacoes_zumbis[2].num_frames_dano = 4;
+    animacoes_zumbis[2].dano[0] = (Frame){43, 316, 57, 70}; // Frame de dano
+    animacoes_zumbis[2].dano[1] = (Frame){166, 315, 57, 70};
+    animacoes_zumbis[2].dano[2] = (Frame){288, 316, 57, 70};
+    animacoes_zumbis[2].dano[3] = (Frame){412, 316, 57, 70};
+
+    animacoes_zumbis[2].num_frames_morte = 5;
+    animacoes_zumbis[2].morte[0] = (Frame){36, 451, 55, 61}; // Frame de morte
+    animacoes_zumbis[2].morte[1] = (Frame){161, 453, 55, 61};
+    animacoes_zumbis[2].morte[2] = (Frame){279, 458, 55, 61};
+    animacoes_zumbis[2].morte[3] = (Frame){410, 466, 55, 61};
+    animacoes_zumbis[2].morte[4] = (Frame){529, 499, 55, 61};
+}
+
+void atualiza_animacao_inimigo(Inimigo* inimigo, Jogador* jogador) {
+    // Pega o conjunto de animações correto para este tipo de zumbi
+    ZumbiAnimSet* anim_set = &animacoes_zumbis[inimigo->sprite_index];
+    
+    // Ponteiros para os dados da animação atual
+    Frame* sequencia_atual;
+    int num_frames_atual;
+    bool loop = true;
+
+    // Lógica de prioridade para decidir qual animação usar
+    if (inimigo->morrendo) {
+        sequencia_atual = anim_set->morte;
+        num_frames_atual = anim_set->num_frames_morte;
+        loop = false;
+    } else if (inimigo->timer_anim_dano > 0) {
+        sequencia_atual = anim_set->dano;
+        num_frames_atual = anim_set->num_frames_dano;
+    } else if (inimigo->x == jogador->x && inimigo->y == jogador->y) {
+        sequencia_atual = anim_set->ataque;
+        num_frames_atual = anim_set->num_frames_ataque;
+    }else {
+        sequencia_atual = anim_set->andar;
+        num_frames_atual = anim_set->num_frames_andar;
+    }
+
+    // Avança o frame
+    if (++inimigo->anim_timer >= 10) {
+        inimigo->anim_timer = 0;
+        if (loop) {
+            inimigo->anim_frame_atual = (inimigo->anim_frame_atual + 1) % num_frames_atual;
+        } else if (inimigo->anim_frame_atual < num_frames_atual - 1) {
+            inimigo->anim_frame_atual++;
+        }
+    }
+}
+
+/*======================*/
+/*   FUNÇÕES DO MENU    */
+/*======================*/
+
 
 void desenhar_menu(Assets* assets, int item_selecionado) {
     if (assets->fundo) {
@@ -574,25 +757,30 @@ void desenha_barra_stamina(Jogador* jogador) {
 void gerar_inimigo(Inimigo inimigos[], int max, float camera_x) {
     for (int i = 0; i < max; i++) {
         if (!inimigos[i].ativo) {
-
-            // Escolhe um tipo de inimigo aleatoriamente
-            if(rand() % 2 == 0){
+            if (rand() % 2 == 0) {
                 inimigos[i].tipo = ZUMBI_ANDARILHO;
                 inimigos[i].hp_max = 100;
                 inimigos[i].hp = 100;
-            }else {
+                inimigos[i].sprite_index = rand() % 3;
+            } else {
                 inimigos[i].tipo = ZUMBI_CUSPIDOR;
                 inimigos[i].hp_max = 200;
                 inimigos[i].hp = 200;
+                inimigos[i].sprite_index = 0;
             }
 
+            inimigos[i].anim_frame_atual = 0;
+            inimigos[i].anim_timer = 0;
+            inimigos[i].timer_anim_dano = 0;
+            inimigos[i].morrendo = false;
+            
             inimigos[i].x = camera_x + LARGURA + (rand() % 100);
-            inimigos[i].y = ALTURA - ALTURA_CHAO - TAM_INIMIGO;
+            inimigos[i].y = ALTURA - ALTURA_CHAO - 65;
             inimigos[i].dy = 0;
             inimigos[i].dx = 0;
             inimigos[i].no_chao = true;
             inimigos[i].ativo = true;
-            inimigos[i].timer_ataque = 60 + (rand() % 120); // Cooldown inicial de 1 a 3 segundos
+            inimigos[i].timer_ataque = 60 + (rand() % 120);
             break;
         }
     }
@@ -605,16 +793,35 @@ int dist(float x1, float y1, float x2, float y2) {
 void update_inimigos(Inimigo inimigos[], Tiro tiros[], Cuspe cuspes[], Jogador *jogador, int *zumbis_mortos, float camera_x, ItemMunicao itens_municao[]) {
     for (int i = 0; i < MAX_INIMIGOS; i++) {
         if (inimigos[i].ativo) {
-            // --- Lógica de IA baseada no tipo de inimigo ---
+            // Se o inimigo está na animação de morte, ele não se move nem ataca.
+            // Apenas a animação é atualizada.
+            if (inimigos[i].morrendo) {
+                ZumbiAnimSet* anim_set = &animacoes_zumbis[inimigos[i].sprite_index];
+                if (inimigos[i].anim_frame_atual >= anim_set->num_frames_morte - 1) {
+                    inimigos[i].ativo = false;
+                }
+                atualiza_animacao_inimigo(&inimigos[i], jogador); // <<-- CORREÇÃO: Passa o jogador
+                continue;
+            }
+
+            // Decrementa o timer da animação de dano, se estiver ativo.
+            if (inimigos[i].timer_anim_dano > 0) {
+                inimigos[i].timer_anim_dano--;
+            }
+
+            // --- Lógica de IA e Movimento (sem alterações) ---
             switch (inimigos[i].tipo) {
                 case ZUMBI_ANDARILHO:
-                    // Persegue o jogador
-                    if (inimigos[i].x < jogador->x) inimigos[i].x += VELOCIDADE_ZUMBI;
-                    else if (inimigos[i].x > jogador->x) inimigos[i].x -= VELOCIDADE_ZUMBI;
-                    break;
-
-                case ZUMBI_CUSPIDOR:
-                    // Calcula a distância horizontal até o jogador
+                    // --- CORREÇÃO: Define a direção do zumbi ---
+                    if (inimigos[i].x < jogador->x) {
+                        inimigos[i].x += VELOCIDADE_ZUMBI;
+                        inimigos[i].direcao = 1; // Virado para a direita
+                    } else if (inimigos[i].x > jogador->x) {
+                        inimigos[i].x -= VELOCIDADE_ZUMBI;
+                        inimigos[i].direcao = -1; // Virado para a esquerda
+                    }
+                    break;                case ZUMBI_CUSPIDOR:
+                // Calcula a distância horizontal até o jogador
                     float dist_para_jogador_x = jogador->x - inimigos[i].x;
                     float dist_abs = fabs(dist_para_jogador_x);
 
@@ -646,49 +853,66 @@ void update_inimigos(Inimigo inimigos[], Tiro tiros[], Cuspe cuspes[], Jogador *
                     break;
             }
 
-            // Física e Desativação (comum a todos)
+            // --- Lógica de Dano (Tiros do Jogador) ---
+            for (int j = 0; j < MAX_TIROS; j++) {
+                if (tiros[j].ativo) {
+                    // CONDIÇÃO DE COLISÃO: Verifica se o centro do tiro está dentro da caixa do inimigo
+                    bool colidiu = (tiros[j].x > inimigos[i].x && tiros[j].x < inimigos[i].x + 41 && // 41 é a largura da sprite
+                                  tiros[j].y > inimigos[i].y && tiros[j].y < inimigos[i].y + 65);  // 65 é a altura
+
+                    if (colidiu) {
+                        tiros[j].ativo = false; // O tiro some
+                        inimigos[i].hp -= 20;   // Inimigo perde vida
+                        inimigos[i].timer_anim_dano = 15; // Ativa a animação de dano por 1/4s
+
+                        if (inimigos[i].hp <= 0) {
+                            inimigos[i].morrendo = true; // Inicia o processo de morte
+                            (*zumbis_mortos)++;
+                            if (rand() % 2 == 0) {
+                                criar_item_municao(itens_municao, inimigos[i].x, inimigos[i].y);
+                            }
+                        }
+                        break; // Um tiro só pode acertar um inimigo
+                    }
+                }
+            }
+
+            // --- Física e Animação ---
             inimigos[i].dy += GRAVIDADE;
             inimigos[i].y += inimigos[i].dy;
-            float chao_y = ALTURA - ALTURA_CHAO - TAM_INIMIGO;
+
+            float chao_y = ALTURA - ALTURA_CHAO - 65; // Usa a altura da sprite
             if (inimigos[i].y > chao_y) {
                 inimigos[i].y = chao_y;
                 inimigos[i].no_chao = true;
                 inimigos[i].dy = 0;
             }
-            if (inimigos[i].x < camera_x - TAM_INIMIGO - 50) inimigos[i].ativo = false;
 
-            // Dano dos tiros do JOGADOR no inimigo
-            for (int j = 0; j < MAX_TIROS; j++) {
-                if (tiros[j].ativo && (dist(tiros[j].x, tiros[j].y, inimigos[i].x, inimigos[i].y) < TAM_INIMIGO)) {
-                    tiros[j].ativo = false;
-                    inimigos[i].hp -= 20; // Dano do tiro do jogador
-                    if (inimigos[i].hp <= 0) {
-                        inimigos[i].ativo = false;
-                        (*zumbis_mortos)++;
-
-                        if (rand() % 2 == 0) {
-                        criar_item_municao(itens_municao, inimigos[i].x, inimigos[i].y);
-                        }
-                    }
-                }
-            }
+            atualiza_animacao_inimigo(&inimigos[i], jogador);
         }
     }
 }
 
 void update_jogador(Jogador *jogador) {
-    jogador->dy += GRAVIDADE; // Aplica a gravidade
-    jogador->y += jogador->dy; // Atualiza a posição vertical do jogador
+    // A física de gravidade continua a mesma
+    jogador->dy += GRAVIDADE;
+    jogador->y += jogador->dy;
 
-    float altura_atual = jogador->anim_sequencia_atual[jogador->anim_frame_atual].h * PLAYER_ESCALA;
-    float chao_y = ALTURA - ALTURA_CHAO - TAM_JOGADOR;
+    // --- CORREÇÃO: Usa a altura redimensionada para calcular a posição do chão ---
+    // Pega a altura do frame atual da animação
+    float altura_original_frame = jogador->anim_sequencia_atual[jogador->anim_frame_atual].h;
+    // Multiplica pela escala para obter a altura final na tela
+    float altura_final_sprite = altura_original_frame * PLAYER_ESCALA;
     
+    // Calcula a posição exata do chão para esta sprite
+    float chao_y = ALTURA - ALTURA_CHAO - altura_final_sprite;
+
     if (jogador->y > chao_y) {
         jogador->y = chao_y; // Garante que o jogador não passe do chão
-        jogador->no_chao = true; // O jogador está no chão
-        jogador->dy = 0; // Reseta a velocidade vertical
+        jogador->no_chao = true;
+        jogador->dy = 0;
     } else {
-        jogador->no_chao = false; // O jogador está no ar
+        jogador->no_chao = false;
     }
 }
 
@@ -799,6 +1023,39 @@ void desenhar_jogador(Jogador* jogador, ALLEGRO_BITMAP* sprite_sheet, float came
                              flags); // Flags de desenho (flip horizontal se necessário)
 }
 
+void desenhar_inimigos(Assets* assets, Inimigo inimigos[], float camera_x) {
+    for (int i = 0; i < MAX_INIMIGOS; i++) {
+        if (inimigos[i].ativo) {
+           
+            float draw_x = inimigos[i].x - camera_x;
+            float draw_y = inimigos[i].y;
+           
+            if (inimigos[i].tipo == ZUMBI_ANDARILHO) {
+                // Pega o conjunto de animações e o bitmap corretos
+                int index = inimigos[i].sprite_index;
+                ZumbiAnimSet* anim_set = &animacoes_zumbis[index];
+                ALLEGRO_BITMAP* sprite_sheet = assets->zumbi_sprites[index];
+
+                // Determina qual sequência de frames usar
+                Frame* sequencia_atual;
+                if (inimigos[i].morrendo) sequencia_atual = anim_set->morte;
+                else if (inimigos[i].timer_anim_dano > 0) sequencia_atual = anim_set->dano;
+                // ... adicione a lógica de ataque aqui ...
+                else sequencia_atual = anim_set->andar;
+
+                // Pega os dados do frame específico e desenha
+                Frame frame = sequencia_atual[inimigos[i].anim_frame_atual];
+                int flags = (inimigos[i].direcao == -1) ? ALLEGRO_FLIP_HORIZONTAL : 0;
+                al_draw_bitmap_region(sprite_sheet, frame.x, frame.y, frame.w, frame.h,
+                                      inimigos[i].x - camera_x, inimigos[i].y, flags);
+            } else {
+                al_draw_filled_circle(draw_x, draw_y, TAM_INIMIGO, al_map_rgb(0, 255, 0));
+
+            }
+        }
+    }
+}
+
 void desenhar_chefe(Chefe *chefe, float camera_x) {
     // Se o chefe não estiver ativo, a função não faz nada
     if (!chefe->ativo) {
@@ -865,13 +1122,13 @@ void aplicar_dano_cuspes(Jogador *jogador, Cuspe cuspes[]) {
     }
 }
 
-int inicia_jogo(ALLEGRO_DISPLAY* disp, ALLEGRO_FONT* font, ALLEGRO_BITMAP* fundo, ALLEGRO_BITMAP* hp_sprite, ALLEGRO_BITMAP* caveira_sprite, ALLEGRO_BITMAP* sprite_dave) {
+int inicia_jogo(ALLEGRO_DISPLAY* disp, Assets* assets) {
     al_init_primitives_addon();
     ALLEGRO_TIMER* timer = al_create_timer(1.0 / 60.0);
     ALLEGRO_EVENT_QUEUE* fila = al_create_event_queue();
 
     float camera_x = 0;
-    float mundo_largura = al_get_bitmap_width(fundo);
+    float mundo_largura = al_get_bitmap_width(assets->fundo);
 
     EstadoDaFase estado_atual = FASE_NORMAL;
 
@@ -954,14 +1211,14 @@ int inicia_jogo(ALLEGRO_DISPLAY* disp, ALLEGRO_FONT* font, ALLEGRO_BITMAP* fundo
 
             // Se o timer de Game Over chegou a zero, mostra a tela e sai
             if (jogador.timer_anim_morte == 0) {
-                tela_game_over(font, zumbis_mortos);
+                tela_game_over(assets->font, zumbis_mortos);
                 rodando = false;
             }
 
             //SE O CHEFE MORREU
             if(estado_atual == BATALHA_CHEFE && chefe.hp <= 0) {
                 al_rest(0.5);
-                tela_vitoria(font);
+                tela_vitoria(assets->font);
                 rodando = false;
             }
 
@@ -1112,25 +1369,14 @@ int inicia_jogo(ALLEGRO_DISPLAY* disp, ALLEGRO_FONT* font, ALLEGRO_BITMAP* fundo
         ========================
         */
         if (redesenhar && al_is_event_queue_empty(fila)) {
-            al_draw_bitmap_region(fundo, camera_x, 0, LARGURA, ALTURA, 0, 0, 0);
+            al_draw_bitmap_region(assets->fundo, camera_x, 0, LARGURA, ALTURA, 0, 0, 0);
 
-            desenhar_jogador(&jogador, sprite_dave, camera_x, frame_counter);
+            desenhar_jogador(&jogador, assets->player_sprite, camera_x, frame_counter);
 
             desenhar_chefe(&chefe, camera_x);
             
-            for (int i = 0; i < MAX_INIMIGOS; i++) {
-                if (inimigos[i].ativo) {
-                    ALLEGRO_COLOR cor;
-                    if (inimigos[i].tipo == ZUMBI_ANDARILHO) {
-                        cor = al_map_rgb(0, 0, 255); // Azul
-                    } else {
-                        cor = al_map_rgb(0, 255, 0); // Verde
-                    }
-
-                    al_draw_filled_circle(inimigos[i].x - camera_x, inimigos[i].y, TAM_INIMIGO, cor);
-                }
-            }
-
+            desenhar_inimigos(assets, inimigos, camera_x);
+            
             for (int i = 0; i < MAX_MUNICAO_ITENS; i++) {
                 if(itens_municao[i].ativo){
                     al_draw_filled_rectangle(itens_municao[i].x - camera_x, itens_municao[i].y, itens_municao[i].x - camera_x + 15, itens_municao[i].y + 15, al_map_rgb(255, 255, 0));
@@ -1153,36 +1399,15 @@ int inicia_jogo(ALLEGRO_DISPLAY* disp, ALLEGRO_FONT* font, ALLEGRO_BITMAP* fundo
 
 
 
-            int hp_largura = al_get_bitmap_width(hp_sprite);
+            int hp_largura = al_get_bitmap_width(assets->hp_sprite);
             for(int i = 0; i < jogador.hp; i++) {
-                al_draw_bitmap(hp_sprite, 10 + (i * (hp_largura + 5)), 10, 0);
+                al_draw_bitmap(assets->hp_sprite, 10 + (i * (hp_largura + 5)), 10, 0);
             }
 
             desenha_barra_stamina(&jogador);
 
-            al_draw_textf(font, al_map_rgb(255, 255, 255), 10, 45, 0,
+            al_draw_textf(assets->font, al_map_rgb(255, 255, 255), 10, 45, 0,
                           "Municao: %d", jogador.municao);
-
-
-            const float tamanho_caveira = 40.0f; 
-
-            // 2. Pega as dimensões originais da imagem da caveira.
-            float sw = al_get_bitmap_width(caveira_sprite);
-            float sh = al_get_bitmap_height(caveira_sprite);
-
-            // 3. Desenha cada caveira usando o tamanho arbitrário.
-            for (int i = 0; i < zumbis_mortos; i++) {
-                // Calcula a posição X para alinhar à direita
-                float draw_x = (LARGURA - 10 - tamanho_caveira) - (i * (tamanho_caveira + 5));
-                float draw_y = 10;
-
-                al_draw_scaled_bitmap(caveira_sprite, // A imagem da caveira
-                                      0, 0,           // Posição (x, y) do recorte (a imagem inteira)
-                                      sw, sh,         // Tamanho (largura, altura) do recorte (a imagem inteira)
-                                      draw_x, draw_y, // Posição (x, y) final na tela
-                                      tamanho_caveira, tamanho_caveira, // Usa o nosso tamanho arbitrário
-                                      0);             // Flags (sem espelhamento)
-            }
 
             al_flip_display();
             redesenhar = false;
@@ -1208,87 +1433,96 @@ int inicia_instrucoes(ALLEGRO_DISPLAY* disp) {
     return 0;
 }
 
+// ==========================================================================
+// FUNÇÃO MAIN (PONTO DE ENTRADA)
+// ==========================================================================
 int main()
 {
-    // --- 1. INICIALIZAÇÃO DO ALLEGRO ---
-    al_init();
+    // --- 1. INICIALIZAÇÃO DO ALLEGRO E ADDONS ---
+    if (!al_init()) {
+        fprintf(stderr, "Falha ao inicializar o Allegro.\n");
+        return -1;
+    }
     al_install_keyboard();
     al_init_image_addon();
     al_init_font_addon();
     al_init_ttf_addon();
     al_init_primitives_addon();
+    
+    // Chama a função para preencher os dados de animação
+    inicializa_dados_animacao_zumbis();
 
+    // --- 2. CRIAÇÃO DOS OBJETOS PRINCIPAIS ---
     ALLEGRO_DISPLAY* disp = al_create_display(LARGURA, ALTURA);
     ALLEGRO_EVENT_QUEUE* queue = al_create_event_queue();
+    if (!disp || !queue) {
+        fprintf(stderr, "Falha ao criar display ou fila de eventos.\n");
+        return -1;
+    }
 
-    // --- 2. CARREGAMENTO DOS ASSETS ---
+    // --- 3. CARREGAMENTO DE TODOS OS ASSETS ---
     Assets assets;
+
     assets.fundo = al_load_bitmap("fundo.png");
     assets.font = al_load_ttf_font("font.ttf", 40, 0);
     assets.hp_sprite = al_load_bitmap("HP_sprites.png");
     assets.caveira_sprite = al_load_bitmap("caveira.png");
     assets.player_sprite = al_load_bitmap("sprite_dave.png");
+    
+    // Carrega a sprite do zumbi cuspidor
+    assets.zumbi_cuspidor_sprite = al_load_bitmap("sprites_ze.png");
 
-    // Adicione verificações de erro para todos os assets aqui!
-    if (!assets.player_sprite) { 
-        fprintf(stderr, "Erro ao carregar sprite do jogador.\n");
+    // Carrega as 4 sprites dos zumbis andarilhos
+    assets.zumbi_sprites[0] = al_load_bitmap("sprites_z1.png");
+    assets.zumbi_sprites[1] = al_load_bitmap("sprites_z2.png");
+    assets.zumbi_sprites[2] = al_load_bitmap("sprites_z3.png");
+
+    // --- Verificação de Erros no Carregamento ---
+    if (!assets.fundo || !assets.font || !assets.hp_sprite || !assets.caveira_sprite || !assets.player_sprite || !assets.zumbi_cuspidor_sprite) {
+        fprintf(stderr, "Erro ao carregar um asset básico (fundo, fonte, ui, ou jogador).\n");
         return -1;
     }
-
-    if (!assets.fundo) {
-        fprintf(stderr, "Erro ao carregar fundo.\n");
-        return -1;
+    for (int i = 0; i < 3; i++) {
+        if (!assets.zumbi_sprites[i]) {
+            fprintf(stderr, "Erro ao carregar o arquivo sprites_z%d.png\n", i + 1);
+            return -1;
+        }
     }
 
-    if (!assets.font) {
-        fprintf(stderr, "Erro ao carregar fonte.\n");
-        return -1;
-    }
-
-    if (!assets.hp_sprite) {
-        fprintf(stderr, "Erro ao carregar sprite de HP.\n");
-        return -1;
-    }
-
-    if (!assets.caveira_sprite) {
-        fprintf(stderr, "Erro ao carregar sprite de caveira.\n");
-        return -1;
-    }
-
-
-
-    // --- 3. REGISTRO DE FONTES DE EVENTOS ---
+    // --- 4. REGISTRO DE FONTES DE EVENTOS ---
     al_register_event_source(queue, al_get_keyboard_event_source());
     al_register_event_source(queue, al_get_display_event_source(disp));
 
-    // --- 4. LOOP PRINCIPAL DO JOGO ---
-    bool jogando = true;
-    while (jogando) {
-        // Chama o loop do menu e espera uma escolha
+    // --- 5. LOOP PRINCIPAL DA APLICAÇÃO (MENU) ---
+    bool app_rodando = true;
+    while (app_rodando) {
         int escolha = loop_do_menu(queue, &assets);
 
         switch (escolha) {
             case 0: // JOGAR
-                // Chama a função principal do jogo
-                inicia_jogo(disp, assets.font, assets.fundo, assets.hp_sprite, assets.caveira_sprite, assets.player_sprite);
+                // Chama a função de jogo passando um ponteiro para a struct de assets
+                inicia_jogo(disp, &assets);
                 break;
-            case 1: // CONFIGURAÇÕES
-                // (Função de configurações pode ser adicionada aqui no futuro)
+            case 1: // CONFIGURAÇÕES (Placeholder)
                 printf("Opcao de configuracoes ainda nao implementada.\n");
-                al_rest(1.0); // Pausa para o usuário ver a mensagem
+                al_rest(1.0);
                 break;
             case 2: // SAIR
-                jogando = false;
+                app_rodando = false;
                 break;
         }
     }
 
-    // --- 5. LIMPEZA DE RECURSOS ---
+    // --- 6. LIMPEZA DE TODOS OS RECURSOS ---
     al_destroy_font(assets.font);
     al_destroy_bitmap(assets.fundo);
     al_destroy_bitmap(assets.hp_sprite);
     al_destroy_bitmap(assets.caveira_sprite);
     al_destroy_bitmap(assets.player_sprite);
+    al_destroy_bitmap(assets.zumbi_cuspidor_sprite);
+    for(int i = 0; i < 3; i++) {
+        al_destroy_bitmap(assets.zumbi_sprites[i]);
+    }
     al_destroy_display(disp);
     al_destroy_event_queue(queue);
 
