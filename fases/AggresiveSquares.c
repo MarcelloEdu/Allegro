@@ -27,7 +27,7 @@
 #define MAX_CUSPES 50
 #define VELOCIDADE_ZUMBI 1.0
 #define VELOCIDADE_BASE 2.0 // Aumentado um pouco a velocidade base
-#define MAX_MUNICAO_ITENS 10
+#define MAX_ITENS 10
 #define MAX_FRAMES_POR_ANIM 15
 
 // --- Enums para Estados ---
@@ -48,11 +48,18 @@ typedef struct {
 
     ALLEGRO_BITMAP* chefe_sprite;
 
+    ALLEGRO_BITMAP* item_municao_sprite;
+    ALLEGRO_BITMAP* item_coracao_sprite;
+
+    ALLEGRO_BITMAP* tiro_sprite;
+    ALLEGRO_BITMAP* cuspe_sprite;
+
     //carrega os sons
     ALLEGRO_SAMPLE* som_tiro;
     ALLEGRO_SAMPLE* som_dano;
     ALLEGRO_SAMPLE* som_dano_inimigo;
     ALLEGRO_SAMPLE* som_recarregar;
+    ALLEGRO_SAMPLE* breathe;
 } Assets;
 
 // Struct para definir um único quadro de uma spritesheet
@@ -82,7 +89,9 @@ typedef struct {
 
 typedef struct {float x, y, dx, dy; bool ativo; } Tiro;
 
-typedef struct {float x, y; bool ativo; int tempo_de_vida;} ItemMunicao;
+typedef enum {ITEM_MUNICAO, ITEM_CORACAO}TipoItem;
+
+typedef struct {float x, y; bool ativo; int tempo_de_vida; TipoItem tipo; } Item;
 
 typedef struct {float x, y, dx, dy; bool ativo; } Cuspe;
 
@@ -840,20 +849,57 @@ void update_tiros(Tiro tiros[], int max, float camera_x) {
         }
     }
 
-void criar_item_municao(ItemMunicao itens[], float x, float y) {
-    for (int i = 0; i < MAX_MUNICAO_ITENS; i++) {
+void criar_item(Item itens[], float x, float y, TipoItem tipo) {
+    for (int i = 0; i < MAX_ITENS; i++) {
         if (!itens[i].ativo) {
             itens[i].ativo = true;
             itens[i].x = x;
-            itens[i].y = y + TAM_INIMIGO; // Dropa um pouco abaixo do centro do inimigo
+            itens[i].y = y + 20; // Posição do drop
             itens[i].tempo_de_vida = 600; // Item dura 10 segundos
+            itens[i].tipo = tipo; // Define o tipo do item
             break;
         }
     }
 }
 
-void update_itens_municao(ItemMunicao itens[]) {
-    for (int i = 0; i < MAX_MUNICAO_ITENS; i++) {
+void desenhar_itens(Item itens[], Assets* assets, float camera_x) {
+    // --- 1. Defina o tamanho final desejado para os itens em pixels ---
+    // Ajuste este valor até ficar do seu agrado!
+    const float tamanho_item = 25.0f;
+
+    for (int i = 0; i < MAX_ITENS; i++) {
+        if (itens[i].ativo) {
+            ALLEGRO_BITMAP* sprite_item = NULL;
+
+            // Decide qual sprite usar
+            if (itens[i].tipo == ITEM_MUNICAO) {
+                sprite_item = assets->item_municao_sprite;
+            } else { // ITEM_CORACAO
+                sprite_item = assets->item_coracao_sprite;
+            }
+
+            if (sprite_item) {
+                // --- 2. Pega as dimensões originais da imagem do item ---
+                float sw = al_get_bitmap_width(sprite_item);
+                float sh = al_get_bitmap_height(sprite_item);
+
+                // Posição de desenho na tela
+                float draw_x = itens[i].x - camera_x;
+                float draw_y = itens[i].y;
+
+                // --- 3. Desenha o item usando al_draw_scaled_bitmap ---
+                al_draw_scaled_bitmap(sprite_item,      // A imagem a ser desenhada
+                                      0, 0,             // Posição (x,y) do recorte (imagem inteira)
+                                      sw, sh,           // Tamanho (w,h) do recorte (imagem inteira)
+                                      draw_x, draw_y,   // Posição final na tela
+                                      tamanho_item, tamanho_item, // Usa nosso tamanho arbitrário
+                                      0);               // Flags (sem espelhamento)
+            }
+        }
+    }
+}
+void update_itens(Item itens[]) {
+    for (int i = 0; i < MAX_ITENS; i++) {
         if (itens[i].ativo) {
             itens[i].tempo_de_vida--;
             if (itens[i].tempo_de_vida <= 0) {
@@ -962,7 +1008,7 @@ int dist(float x1, float y1, float x2, float y2) {
     return (int)sqrt((x2 - x1) * (x2 - x1) + (y2 - y1) * (y2 - y1));
 }
 
-void update_inimigos(Inimigo inimigos[], Tiro tiros[], Cuspe cuspes[], Jogador *jogador, int *zumbis_mortos, float camera_x, ItemMunicao itens_municao[], Assets *assets) {
+void update_inimigos(Inimigo inimigos[], Tiro tiros[], Cuspe cuspes[], Jogador *jogador, int *zumbis_mortos, float camera_x, Item itens[], Assets *assets) {
     for (int i = 0; i < MAX_INIMIGOS; i++) {
         if (inimigos[i].ativo) {
             // Se o inimigo está na animação de morte, ele não se move nem ataca.
@@ -1049,8 +1095,15 @@ void update_inimigos(Inimigo inimigos[], Tiro tiros[], Cuspe cuspes[], Jogador *
                         if (inimigos[i].hp <= 0) {
                             inimigos[i].morrendo = true; // Inicia o processo de morte
                             (*zumbis_mortos)++;
-                            if (rand() % 2 == 0) {
-                                criar_item_municao(itens_municao, inimigos[i].x, inimigos[i].y);
+
+                            int chance = rand() % 4;
+
+                            if(chance == 0) {
+                                // Chance de 25% de dropar um item de munição
+                                criar_item(itens, inimigos[i].x, inimigos[i].y, ITEM_MUNICAO);
+                            } else if (chance == 1) {
+                                // Chance de 25% de dropar um item de vida
+                                criar_item(itens, inimigos[i].x, inimigos[i].y, ITEM_CORACAO);
                             }
                         }
                         break; // Um tiro só pode acertar um inimigo
@@ -1356,7 +1409,7 @@ Chefe chefe;
     Tiro tiros[MAX_TIROS] = {0};
     Inimigo inimigos[MAX_INIMIGOS] = {0};
     Cuspe cuspes[MAX_CUSPES] = {0};
-    ItemMunicao itens_municao[MAX_MUNICAO_ITENS] = {0};
+    Item itens[MAX_ITENS] = {0};
 
     int frames_inimigo = 0;
     int zumbis_mortos = 0;
@@ -1461,8 +1514,8 @@ Chefe chefe;
 
             update_tiros(tiros, MAX_TIROS, camera_x);
             update_cuspes(cuspes, MAX_CUSPES, camera_x);
-            update_itens_municao(itens_municao);
-            update_inimigos(inimigos, tiros, cuspes, &jogador, &zumbis_mortos, camera_x, itens_municao, assets);
+            update_itens(itens);
+            update_inimigos(inimigos, tiros, cuspes, &jogador, &zumbis_mortos, camera_x, itens, assets);
             
             if(chefe.ativo || chefe.morrendo) {
                 update_chefe(&chefe, &jogador, tiros, cuspes, mundo_largura);
@@ -1497,25 +1550,34 @@ Chefe chefe;
                 jogador.timer_stamina = 8 * 60;
             }
             
+            // Dentro do evento KEY_DOWN, na lógica da tecla R
             if (ev.keyboard.keycode == ALLEGRO_KEY_R) {
-                for (int i = 0; i < MAX_MUNICAO_ITENS; i++) {
-                    if (itens_municao[i].ativo) {
-                        float dist_x = fabs(jogador.x - itens_municao[i].x);
+                for (int i = 0; i < MAX_ITENS; i++) {
+                    if (itens[i].ativo) {
+                        float dist_x = fabs(jogador.x - itens[i].x);
 
                         if(dist_x < TAM_JOGADOR) {
-                            jogador.municao += 18; // Adiciona 5 munições
-                            itens_municao[i].ativo = false; // Remove o item de munição
 
-                            jogador.timer_anim_reload = 60; // Tempo de recarga
-                            jogador.anim_frame_atual = 0; // Reseta o frame da animação de recarga                            
+                            if(itens[i].tipo == ITEM_MUNICAO) {
+                                jogador.municao += 18; 
+                                itens[i].ativo = false; // Remove o item de munição
 
-                            printf("Munição coletada! Total: %d\n", jogador.municao);
-                            al_play_sample(assets->som_recarregar, 1.0, 0.0, 1.0, ALLEGRO_PLAYMODE_ONCE, NULL);
-                            break;
+                                jogador.timer_anim_reload = 60; // Tempo de recarga
+                                jogador.anim_frame_atual = 0; // Reseta o frame da animação de recarga                            
+
+                                printf("Munição coletada! Total: %d\n", jogador.municao);
+                                al_play_sample(assets->som_recarregar, 1.0, 0.0, 1.0, ALLEGRO_PLAYMODE_ONCE, NULL);
+                            }else if (itens[i].tipo == ITEM_CORACAO) {
+                                jogador.hp++;
+                                itens[i].ativo = false; // Remove o item de vida
+                                printf("Vida coletada! HP atual: %d\n", jogador.hp);
+                                al_play_sample(assets->breathe, 1.0, 0.0, 1.0, ALLEGRO_PLAYMODE_ONCE, NULL);
+                            }    break;
                         }
                     }
                 }
             }
+
             if (ev.keyboard.keycode == ALLEGRO_KEY_SPACE) {
                 if(jogador.municao > 0) {
                     jogador.municao--;
@@ -1582,12 +1644,8 @@ Chefe chefe;
             desenhar_chefe(&chefe, assets, camera_desenho_x);
             
             desenhar_inimigos(assets, inimigos, camera_desenho_x);
-            
-            for (int i = 0; i < MAX_MUNICAO_ITENS; i++) {
-                if(itens_municao[i].ativo){
-                    al_draw_filled_rectangle(itens_municao[i].x - camera_desenho_x, itens_municao[i].y, itens_municao[i].x - camera_x + 15, itens_municao[i].y + 15, al_map_rgb(255, 255, 0));
-                }
-            }
+
+            desenhar_itens(itens, assets, camera_x);
 
             for (int i = 0; i < MAX_CUSPES; i++) {
                 if (cuspes[i].ativo) {
@@ -1679,6 +1737,12 @@ int main()
     assets.caveira_sprite = al_load_bitmap("caveira.png");
     assets.player_sprite = al_load_bitmap("sprite_dave.png");
 
+    assets.item_coracao_sprite = al_load_bitmap("vida.png");
+    assets.item_municao_sprite = al_load_bitmap("municao.jpeg");
+
+    assets.tiro_sprite = al_load_bitmap("tiro.png");
+    assets.cuspe_sprite = al_load_bitmap("cuspe.png");
+
     assets.chefe_sprite = al_load_bitmap("boss.png");
     
     // Carrega a sprite do zumbi cuspidor
@@ -1693,6 +1757,7 @@ int main()
     assets.som_dano_inimigo = al_load_sample("dano_zumbi.wav");
     assets.som_recarregar = al_load_sample("reload.wav");
     assets.som_tiro = al_load_sample("tiro.wav");
+    assets.breathe = al_load_sample("breathe.wav");
 
     // --- Verificação de Erros no Carregamento ---
     if (!assets.fundo || !assets.font || !assets.hp_sprite || !assets.caveira_sprite || !assets.player_sprite || !assets.zumbi_cuspidor_sprite) {
