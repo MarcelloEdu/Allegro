@@ -30,6 +30,8 @@
 #define MAX_ITENS 10
 #define MAX_FRAMES_POR_ANIM 15
 
+float volume_geral = 1.0;
+
 // --- Enums para Estados ---
 typedef enum { FASE_NORMAL, BATALHA_CHEFE } EstadoDaFase;
 typedef enum { ZUMBI_ANDARILHO, ZUMBI_CUSPIDOR } TipoInimigo;
@@ -634,12 +636,104 @@ void desenhar_menu(Assets* assets, int item_selecionado) {
         al_clear_to_color(al_map_rgb(0,0,0));
     }
 
-    const char* itens[] = {"JOGAR", "CONFIGURACOES", "SAIR"};
-    for (int i = 0; i < 3; i++) {
+    // --- ATUALIZADO: Array com os 4 itens do menu ---
+    const char* itens[] = {"JOGAR", "INSTRUCOES", "CONFIGURACOES", "SAIR"};
+    
+    // O loop agora vai até 4
+    for (int i = 0; i < 4; i++) {
         ALLEGRO_COLOR cor = (i == item_selecionado) ? al_map_rgb(255, 255, 0) : al_map_rgb(255, 255, 255);
-        al_draw_text(assets->font, cor, LARGURA / 2, ALTURA / 2 - 40 + i * 40, ALLEGRO_ALIGN_CENTER, itens[i]);
+        al_draw_text(assets->font, cor, LARGURA / 2, ALTURA / 2 - 60 + i * 40, ALLEGRO_ALIGN_CENTER, itens[i]);
     }
     al_flip_display();
+}
+
+void tela_instrucoes(ALLEGRO_DISPLAY* disp, Assets* assets) {
+    ALLEGRO_EVENT_QUEUE* fila_local = al_create_event_queue();
+    al_register_event_source(fila_local, al_get_keyboard_event_source());
+    al_register_event_source(fila_local, al_get_display_event_source(disp));
+
+    const char* texto_instrucoes = 
+        "Use W, A, S, D para se mover e pular.\n"
+        "Pressione ESPACO para atirar.\n"
+        "Pressione C para correr (gasta estamina).\n"
+        "Pressione R sobre um item para coleta-lo.\n"
+        "Pressione P para pausar o jogo.\n\n"
+        "DICA DO CHEFE: Mire na cabeca!";
+
+    while (true) {
+        // --- DESENHO ---
+        al_set_target_backbuffer(disp); // Garante que estamos desenhando na tela
+        al_clear_to_color(al_map_rgb(10, 10, 30)); // Fundo azul escuro
+
+        al_draw_text(assets->font, al_map_rgb(255, 255, 0), LARGURA / 2, 50, ALLEGRO_ALIGN_CENTER, "INSTRUCOES");
+        
+        // Desenha o texto com múltiplas linhas
+        al_draw_multiline_text(assets->font, al_map_rgb(255, 255, 255), LARGURA / 2, 150, LARGURA - 100, 40, ALLEGRO_ALIGN_CENTER, texto_instrucoes);
+
+        al_draw_text(assets->font, al_map_rgb(150, 150, 150), LARGURA / 2, ALTURA - 100, ALLEGRO_ALIGN_CENTER, "Pressione ENTER ou ESC para voltar");
+
+        al_flip_display();
+
+        // --- EVENTOS ---
+        ALLEGRO_EVENT ev;
+        al_wait_for_event(fila_local, &ev);
+        if (ev.type == ALLEGRO_EVENT_KEY_DOWN) {
+            if (ev.keyboard.keycode == ALLEGRO_KEY_ENTER || ev.keyboard.keycode == ALLEGRO_KEY_ESCAPE) {
+                break;
+            }
+        } else if (ev.type == ALLEGRO_EVENT_DISPLAY_CLOSE) {
+            break;
+        }
+    }
+    al_destroy_event_queue(fila_local);
+}
+
+void tela_configuracoes(ALLEGRO_DISPLAY* disp, ALLEGRO_EVENT_QUEUE* queue, Assets* assets) {
+    
+    while (true) {
+        // --- DESENHO ---
+        al_set_target_backbuffer(disp);
+        al_clear_to_color(al_map_rgb(30, 10, 10)); // Fundo escuro
+
+        al_draw_text(assets->font, al_map_rgb(255, 255, 0), LARGURA / 2, 50, ALLEGRO_ALIGN_CENTER, "CONFIGURACOES");
+        
+        // Desenha a instrução de volume
+        al_draw_text(assets->font, al_map_rgb(255, 255, 255), LARGURA / 2, 200, ALLEGRO_ALIGN_CENTER, "Volume Geral");
+        
+        // Desenha a barra de volume
+        float barra_largura = 400;
+        float barra_x = (LARGURA - barra_largura) / 2;
+        al_draw_filled_rectangle(barra_x, 250, barra_x + (barra_largura * volume_geral), 280, al_map_rgb(0, 200, 200));
+        al_draw_rectangle(barra_x, 250, barra_x + barra_largura, 280, al_map_rgb(255, 255, 255), 2);
+        
+        // Desenha a porcentagem
+        al_draw_textf(assets->font, al_map_rgb(255, 255, 255), LARGURA / 2, 300, ALLEGRO_ALIGN_CENTER, "%.0f %%", volume_geral * 100);
+
+        al_draw_text(assets->font, al_map_rgb(150, 150, 150), LARGURA / 2, ALTURA - 100, ALLEGRO_ALIGN_CENTER, "Use as setas para ajustar. ENTER ou ESC para voltar.");
+
+        al_flip_display();
+
+        // --- EVENTOS ---
+        ALLEGRO_EVENT ev;
+        al_wait_for_event(queue, &ev);
+        if (ev.type == ALLEGRO_EVENT_KEY_DOWN) {
+            // Aumenta ou diminui o volume
+            if (ev.keyboard.keycode == ALLEGRO_KEY_LEFT) {
+                volume_geral -= 0.1;
+                if (volume_geral < 0.0) volume_geral = 0.0;
+            } else if (ev.keyboard.keycode == ALLEGRO_KEY_RIGHT) {
+                volume_geral += 0.1;
+                if (volume_geral > 1.0) volume_geral = 1.0;
+            }
+            
+            // Sai da tela
+            if (ev.keyboard.keycode == ALLEGRO_KEY_ENTER || ev.keyboard.keycode == ALLEGRO_KEY_ESCAPE) {
+                break;
+            }
+        } else if (ev.type == ALLEGRO_EVENT_DISPLAY_CLOSE) {
+            break;
+        }
+    }
 }
 
 int loop_do_menu(ALLEGRO_EVENT_QUEUE *queue, Assets* assets) {
@@ -653,21 +747,22 @@ int loop_do_menu(ALLEGRO_EVENT_QUEUE *queue, Assets* assets) {
         if (ev.type == ALLEGRO_EVENT_KEY_DOWN) {
             switch (ev.keyboard.keycode) {
                 case ALLEGRO_KEY_UP:
-                    item_selecionado = (item_selecionado == 0) ? 2 : item_selecionado - 1;
+                    // --- CORREÇÃO: Lógica de "wrap" para 4 itens ---
+                    item_selecionado = (item_selecionado == 0) ? 3 : item_selecionado - 1;
                     break;
                 case ALLEGRO_KEY_DOWN:
-                    item_selecionado = (item_selecionado + 1) % 3;
+                    // --- CORREÇÃO: Lógica de "wrap" para 4 itens ---
+                    item_selecionado = (item_selecionado + 1) % 4;
                     break;
                 case ALLEGRO_KEY_ENTER:
-                    return item_selecionado; // Retorna a escolha do usuário
+                    return item_selecionado; // Retorna a escolha (0, 1, 2 ou 3)
                 case ALLEGRO_KEY_ESCAPE:
-                    return 2; // Trata ESC como "SAIR"
+                    return 3; 
             }
         } else if (ev.type == ALLEGRO_EVENT_DISPLAY_CLOSE) {
-            return 2; // Trata o 'X' da janela como "SAIR"
+            return 3;
         }
 
-        // Redesenha o menu somente se houver uma mudança de input
         desenhar_menu(assets, item_selecionado);
     }
 }
@@ -724,6 +819,42 @@ void tela_vitoria(ALLEGRO_FONT* font) {
     al_destroy_event_queue(fila_vitoria);
 }
 
+void tela_pausa(ALLEGRO_EVENT_QUEUE* fila, ALLEGRO_TIMER* timer, ALLEGRO_FONT* font) {
+    // 1. Para o timer principal do jogo para congelar toda a lógica
+    al_stop_timer(timer);
+
+    // 2. Desenha a sobreposição de pausa
+    // Cria uma cor preta semi-transparente
+    ALLEGRO_COLOR overlay_cor = al_map_rgba_f(0, 0, 0, 0.5); 
+    al_draw_filled_rectangle(0, 0, LARGURA, ALTURA, overlay_cor);
+    
+    // Desenha o texto "PAUSADO"
+    al_draw_text(font, al_map_rgb(255, 255, 255), LARGURA / 2, ALTURA / 2 - 40, ALLEGRO_ALIGN_CENTER, "PAUSADO");
+    al_draw_text(font, al_map_rgb(200, 200, 200), LARGURA / 2, ALTURA / 2 + 20, ALLEGRO_ALIGN_CENTER, "(Pressione 'P' para continuar)");
+
+    // 3. Mostra o resultado na tela
+    al_flip_display();
+
+    // 4. Entra em um loop de espera, ignorando o timer do jogo
+    while (true) {
+        ALLEGRO_EVENT ev;
+        al_wait_for_event(fila, &ev);
+
+        // Se o jogador apertar 'P' de novo, sai do loop de pausa
+        if (ev.type == ALLEGRO_EVENT_KEY_DOWN && ev.keyboard.keycode == ALLEGRO_KEY_P) {
+            break;
+        }
+        // Permite fechar o jogo mesmo se estiver pausado
+        if (ev.type == ALLEGRO_EVENT_DISPLAY_CLOSE) {
+            // (Opcional: Adicionar lógica para sair do jogo aqui se desejar)
+            break;
+        }
+    }
+
+    // 5. Reinicia o timer do jogo antes de voltar para a partida
+    al_start_timer(timer);
+}
+
 void get_movement(bool *teclas, float *x, float *y) {
     if (teclas[ALLEGRO_KEY_W] && *y > 0) *y -= 4;
     if (teclas[ALLEGRO_KEY_S] && *y + TAM_JOGADOR < ALTURA - ALTURA_CHAO) *y += 4;
@@ -758,7 +889,7 @@ void aplicar_dano_jogador(Jogador *jogador, Inimigo inimigos[], int max_inimigos
                 jogador->intangivel_timer = 180; // Fica intangível por 3 segundos (180 frames / 60 FPS)
 
                 *shake_timer = 15;
-                al_play_sample(assets->som_dano, 1.0, 0.0, 1.0, ALLEGRO_PLAYMODE_ONCE, NULL);
+                al_play_sample(assets->som_dano, volume_geral, 0.0, 1.0, ALLEGRO_PLAYMODE_ONCE, NULL);
 
                 // Aplica knockback
                 // Se o inimigo está à direita, empurra o jogador para a esquerda.
@@ -898,6 +1029,7 @@ void desenhar_itens(Item itens[], Assets* assets, float camera_x) {
         }
     }
 }
+
 void update_itens(Item itens[]) {
     for (int i = 0; i < MAX_ITENS; i++) {
         if (itens[i].ativo) {
@@ -1087,7 +1219,7 @@ void update_inimigos(Inimigo inimigos[], Tiro tiros[], Cuspe cuspes[], Jogador *
                                   tiros[j].y > inimigos[i].y && tiros[j].y < inimigos[i].y + 65);  // 65 é a altura
 
                     if (colidiu) {
-                        al_play_sample(assets->som_dano_inimigo, 1.0, 0.0, 1.0, ALLEGRO_PLAYMODE_ONCE, NULL);
+                        al_play_sample(assets->som_dano_inimigo, volume_geral, 0.0, 1.0, ALLEGRO_PLAYMODE_ONCE, NULL);
                         tiros[j].ativo = false; // O tiro some
                         inimigos[i].hp -= 20;   // Inimigo perde vida
                         inimigos[i].timer_anim_dano = 15; // Ativa a animação de dano por 1/4s
@@ -1219,6 +1351,59 @@ void pular(Jogador *jogador) {
     if (jogador->no_chao) {
         jogador->dy = PULO_FORCA; // Aplica a força do pulo
         jogador->no_chao = false; // O jogador não está mais no chão
+    }
+}
+
+void desenhar_tiros(Tiro tiros[], Assets* assets, float camera_x) {
+    if (!assets->tiro_sprite) return;
+
+    // Defina a escala que você deseja para o tiro
+    const float escala_tiro = 0.2f;
+
+    // Pega as dimensões da imagem
+    float sw = al_get_bitmap_width(assets->tiro_sprite);
+    float sh = al_get_bitmap_height(assets->tiro_sprite);
+    
+    // Define o centro da imagem como o ponto de rotação
+    float cx = sw / 2.0;
+    float cy = sh / 2.0;
+    
+    for (int i = 0; i < MAX_TIROS; i++) {
+        if (tiros[i].ativo) {
+            // Calcula o ângulo do tiro a partir de sua velocidade
+            float angulo = atan2(tiros[i].dy, tiros[i].dx);
+            
+            // --- CORREÇÃO: Usa a posição do tiro como o ponto central do desenho ---
+            // A função vai desenhar a imagem de forma que seu centro (cx, cy) fique
+            // exatamente na posição (tiros[i].x, tiros[i].y)
+            al_draw_scaled_rotated_bitmap(assets->tiro_sprite,
+                                          cx, cy,                           // Centro da imagem original
+                                          tiros[i].x - camera_x, tiros[i].y, // Posição do *centro* na tela
+                                          escala_tiro, escala_tiro,         // Escala
+                                          angulo,                           // Rotação
+                                          0);                               // Flags
+        }
+    }
+}
+
+void desenhar_cuspes(Cuspe cuspes[], Assets* assets, float camera_x) {
+    if (!assets->cuspe_sprite) return; // Segurança
+
+    // --- Defina a escala desejada para o cuspe ---
+    const float escala_cuspe = 0.1f; // Ex: 120% do tamanho original
+
+    float sw = al_get_bitmap_width(assets->cuspe_sprite);
+    float sh = al_get_bitmap_height(assets->cuspe_sprite);
+    
+    for (int i = 0; i < MAX_CUSPES; i++) {
+        if (cuspes[i].ativo) {
+            // Usa a versão escalada para desenhar
+            al_draw_scaled_bitmap(assets->cuspe_sprite,
+                                  0, 0, sw, sh, // Recorta a imagem inteira
+                                  cuspes[i].x - camera_x, cuspes[i].y, // Posição na tela
+                                  sw * escala_cuspe, sh * escala_cuspe, // Tamanho final
+                                  0);
+        }
     }
 }
 
@@ -1539,6 +1724,12 @@ Chefe chefe;
         
         else if (ev.type == ALLEGRO_EVENT_KEY_DOWN) {
             teclas[ev.keyboard.keycode] = true;
+
+            if (ev.keyboard.keycode == ALLEGRO_KEY_P) {
+                // Chama a função de pausa, passando o que ela precisa
+                tela_pausa(fila, timer, assets->font);
+            }
+
             if (ev.keyboard.keycode == ALLEGRO_KEY_A) jogador.direcao = -1;
             else if (ev.keyboard.keycode == ALLEGRO_KEY_D) jogador.direcao = 1;
 
@@ -1566,12 +1757,12 @@ Chefe chefe;
                                 jogador.anim_frame_atual = 0; // Reseta o frame da animação de recarga                            
 
                                 printf("Munição coletada! Total: %d\n", jogador.municao);
-                                al_play_sample(assets->som_recarregar, 1.0, 0.0, 1.0, ALLEGRO_PLAYMODE_ONCE, NULL);
+                                al_play_sample(assets->som_recarregar, volume_geral, 0.0, 1.0, ALLEGRO_PLAYMODE_ONCE, NULL);
                             }else if (itens[i].tipo == ITEM_CORACAO) {
                                 jogador.hp++;
                                 itens[i].ativo = false; // Remove o item de vida
                                 printf("Vida coletada! HP atual: %d\n", jogador.hp);
-                                al_play_sample(assets->breathe, 1.0, 0.0, 1.0, ALLEGRO_PLAYMODE_ONCE, NULL);
+                                al_play_sample(assets->breathe, volume_geral, 0.0, 1.0, ALLEGRO_PLAYMODE_ONCE, NULL);
                             }    break;
                         }
                     }
@@ -1608,7 +1799,7 @@ Chefe chefe;
                     float tiro_y = jogador.y + TAM_JOGADOR / 2.0;
 
                     disparar_tiro(tiros, tiro_x, tiro_y, vel_x, vel_y);
-                    al_play_sample(assets->som_tiro, 1.0, 0.0, 1.0, ALLEGRO_PLAYMODE_ONCE, NULL);
+                    al_play_sample(assets->som_tiro, volume_geral, 0.0, 1.0, ALLEGRO_PLAYMODE_ONCE, NULL);
                 }else{
                     printf("Sem munição!\n");
                 }
@@ -1647,21 +1838,9 @@ Chefe chefe;
 
             desenhar_itens(itens, assets, camera_x);
 
-            for (int i = 0; i < MAX_CUSPES; i++) {
-                if (cuspes[i].ativo) {
-                    al_draw_filled_circle(cuspes[i].x - camera_desenho_x, cuspes[i].y, 7, al_map_rgb(0, 255, 0));
-                }
-            }
-
-            for (int i = 0; i < MAX_TIROS; i++) {
-                if (tiros[i].ativo) {
-                    al_draw_filled_rectangle(tiros[i].x - camera_desenho_x, tiros[i].y,
-                                             tiros[i].x - camera_desenho_x + TAM_TIROS, tiros[i].y + 5,
-                                             al_map_rgb(255, 255, 0)); // Cor amarela para o tiro
-                }
-            }
-
-
+            desenhar_tiros(tiros, assets, camera_desenho_x);
+            
+            desenhar_cuspes(cuspes, assets, camera_x);
 
             int hp_largura = al_get_bitmap_width(assets->hp_sprite);
             for(int i = 0; i < jogador.hp; i++) {
@@ -1683,23 +1862,10 @@ Chefe chefe;
     return 0;
 }
 
-int inicia_configuracoes(ALLEGRO_DISPLAY* disp) {
-    al_clear_to_color(al_map_rgb(0, 0, 255));
-    al_flip_display();
-    al_rest(2.0);  // Espera 2 segundos para mostrar a tela preta
-    return 0;
-}
 
-int inicia_instrucoes(ALLEGRO_DISPLAY* disp) {
-    al_clear_to_color(al_map_rgb(0, 255, 0));
-    al_flip_display();
-    al_rest(2.0);  // Espera 2 segundos para mostrar a tela preta
-    return 0;
-}
-
-// ==========================================================================
+// =====================================
 // FUNÇÃO MAIN (PONTO DE ENTRADA)
-// ==========================================================================
+// =====================================
 int main()
 {
     // --- 1. INICIALIZAÇÃO DO ALLEGRO E ADDONS ---
@@ -1778,21 +1944,23 @@ int main()
     // --- 5. LOOP PRINCIPAL DA APLICAÇÃO (MENU) ---
     bool app_rodando = true;
     while (app_rodando) {
+        al_flush_event_queue(queue);
         int escolha = loop_do_menu(queue, &assets);
 
-        switch (escolha) {
-            case 0: // JOGAR
-                // Chama a função de jogo passando um ponteiro para a struct de assets
-                inicia_jogo(disp, &assets);
-                break;
-            case 1: // CONFIGURAÇÕES (Placeholder)
-                printf("Opcao de configuracoes ainda nao implementada.\n");
-                al_rest(1.0);
-                break;
-            case 2: // SAIR
-                app_rodando = false;
-                break;
-        }
+    switch (escolha) {
+                case 0: // JOGAR
+                    inicia_jogo(disp, &assets);
+                    break;
+                case 1: // CONFIGURAÇÕES
+                    tela_configuracoes(disp, queue, &assets);
+                    break;
+                case 2: // SAIR (ou INSTRUÇÕES, dependendo da sua ordem)
+                    tela_instrucoes(disp, &assets); // Supondo que SAIR é o último
+                    break;
+                case 3: // SAIR
+                    app_rodando = false;
+                    break;
+            }
     }
 
     // --- 6. LIMPEZA DE TODOS OS RECURSOS ---
